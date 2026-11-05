@@ -271,9 +271,7 @@ struct AboutView: View {
 
 // MARK: Audit
 
-/// Vault audit, computed locally: reused and weak passwords, HTTP sites;
-/// known breaches on request (Have I Been Pwned, by k-anonymity: 5
-/// characters of each password's SHA-1 hash).
+/// Vault audit, computed locally: reused and weak passwords, HTTP sites.
 struct AuditView: View {
     @Environment(PhoneModel.self) private var model
     /// The cards have appeared (only once, cascading).
@@ -284,25 +282,8 @@ struct AuditView: View {
         List {
             if let audit = model.audit {
                 Section {
-                    AuditSummary(audit: audit, breaches: model.breaches, passkeys: model.passkeyAudit.count)
+                    AuditSummary(audit: audit, passkeys: model.passkeyAudit.count)
                         .staggered(0, shown: appeared)
-                    breachesRow
-                        .staggered(1, shown: appeared)
-                } footer: {
-                    Text("Only the first 5 characters of each password's SHA-1 hash leave the iPhone.")
-                }
-                if let breaches = model.breaches, !breaches.isEmpty {
-                    Section {
-                        ForEach(breaches, id: \.item.id) { breach in
-                            AuditRow(summary: breach.item,
-                                     detail: String(localized: "Seen \(breach.count.formatted(.number)) times in breaches"),
-                                     tint: .red)
-                                .staggered(2, shown: appeared)
-                        }
-                    } header: {
-                        AuditHeader(title: "Compromised", count: breaches.count, tint: .red)
-                            .staggered(2, shown: appeared)
-                    }
                 }
                 if !audit.reused.isEmpty {
                     Section {
@@ -365,9 +346,9 @@ struct AuditView: View {
         }
     }
 
-    /// "Passkey possible": sites that accept passkeys, according to
-    /// passkeys.2fa.directory. Not a problem, an improvement: outside the
-    /// score.
+    /// "Passkey possible": sites that accept passkeys, according to the
+    /// bundled passkeys.2fa.directory list. Not a problem, an improvement:
+    /// outside the score.
     @ViewBuilder private var passkeySection: some View {
         let passkeys = model.passkeyAudit
         if let report = passkeys.report, !report.candidates.isEmpty {
@@ -384,17 +365,9 @@ struct AuditView: View {
                 Text(passkeyFooter(report))
             }
             .id("passkeys")
-        } else if passkeys.loading && passkeys.report == nil {
+        } else if let error = passkeys.error {
             Section {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Looking for sites that accept passkeys…")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-        } else if let error = passkeys.error, model.mode == .vaultwarden {
-            Section {
-                ErrorLabel(text: String(localized: "Passkey possible: the directory could not be downloaded (\(error))."))
+                ErrorLabel(text: String(localized: "Passkey possible: the bundled directory is unreadable (\(error))."))
             }
         }
     }
@@ -425,34 +398,7 @@ struct AuditView: View {
     }
 
     private func passkeyFooter(_ report: PasskeyReport) -> String {
-        var text = String(localized: "These sites accept passkeys. “Create” opens the site in Safari: choose Verrou to save the passkey. According to passkeys.2fa.directory")
-        if report.stale {
-            let date = Date(timeIntervalSince1970: TimeInterval(report.fetchedAt))
-            text += " " + String(localized: "(directory of \(date.formatted(.dateTime.day().month(.wide))), offline)")
-        }
-        return text + "."
-    }
-
-    @ViewBuilder private var breachesRow: some View {
-        if model.mode == .vaultwarden {
-            Button {
-                Task { await model.checkBreaches() }
-            } label: {
-                HStack {
-                    SettingsLabel(model.breaches == nil ? String(localized: "Look for known breaches") : String(localized: "Check again"),
-                                  symbol: "exclamationmark.shield.fill", tint: .red)
-                    Spacer()
-                    if model.checkingBreaches { ProgressView() }
-                }
-            }
-            .disabled(model.checkingBreaches)
-            if let error = model.breachError {
-                ErrorLabel(text: error)
-            } else if model.breaches?.isEmpty == true {
-                Label("No password found in known breaches", systemImage: "checkmark.seal")
-                    .foregroundStyle(.green)
-            }
-        }
+        String(localized: "These sites accept passkeys. “Create” opens the site in Safari: choose Verrou to save the passkey. According to passkeys.2fa.directory")
     }
 }
 
@@ -460,13 +406,12 @@ struct AuditView: View {
 /// per problem (the Mac's duplicate chips).
 private struct AuditSummary: View {
     let audit: AuditReport
-    let breaches: [BreachedPassword]?
     /// "Passkey possible": an improvement, outside the score.
     var passkeys = 0
 
     var body: some View {
-        let issues = (breaches?.count ?? 0) + audit.reused.count + audit.weak.count + audit.insecure.count
-        let tint: Color = (breaches?.isEmpty == false) ? .red : issues > 0 ? .orange : .green
+        let issues = audit.reused.count + audit.weak.count + audit.insecure.count
+        let tint: Color = issues > 0 ? .orange : .green
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 16) {
                 AuditScoreGauge(score: score, tint: tint)
@@ -481,7 +426,6 @@ private struct AuditSummary: View {
             }
             if issues > 0 || passkeys > 0 {
                 FlowLayout(spacing: 8, lineSpacing: 6) {
-                    if let count = breaches?.count, count > 0 { CountCapsule(text: String(localized: "\(count) compromised"), tint: .red) }
                     if !audit.reused.isEmpty {
                         CountCapsule(text: audit.reused.count > 1 ? String(localized: "\(audit.reused.count) reused groups") : String(localized: "\(audit.reused.count) reused group"), tint: .orange)
                     }
@@ -507,7 +451,6 @@ private struct AuditSummary: View {
         for group in audit.reused { flagged.formUnion(group.map(\.id)) }
         flagged.formUnion(audit.weak.map(\.item.id))
         flagged.formUnion(audit.insecure.map(\.id))
-        flagged.formUnion((breaches ?? []).map(\.item.id))
         let clean = max(0, Int(audit.checked) - flagged.count)
         return Int((Double(clean) / Double(audit.checked) * 100).rounded())
     }

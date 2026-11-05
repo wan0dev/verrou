@@ -18,8 +18,8 @@ struct AuditSidebarButton: View {
     }
 }
 
-/// Vault audit: known leaks (on request), reused and weak passwords, HTTP
-/// sites. A click shows the item on the right.
+/// Vault audit: reused and weak passwords, HTTP sites. A click shows the
+/// item on the right.
 struct AuditView: View {
     @Environment(AppModel.self) private var model
 
@@ -28,7 +28,6 @@ struct AuditView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 4) {
                 header
-                breachSection
                 if let audit = model.audit {
                     if !audit.reused.isEmpty {
                         title("Reused passwords", count: audit.reused.reduce(0) { $0 + $1.count },
@@ -94,37 +93,6 @@ struct AuditView: View {
                                        : String(localized: "\(count) passkey available"))
         }
         return line
-    }
-
-    @ViewBuilder private var breachSection: some View {
-        if let breaches = model.breaches {
-            title("Known leaks", count: breaches.count,
-                  detail: breaches.isEmpty
-                      ? String(localized: "None of your passwords appears in the recorded leaks.")
-                      : String(localized: "These passwords circulate in public leaks: change them first."))
-            ForEach(breaches, id: \.item.id) { breach in
-                row(breach.item, note: String(localized: "seen \(breach.count.formatted()) times"), change: true)
-                    .id("breach-\(breach.item.id)")
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Known leaks").font(.headline)
-                Text("Verrou can check your passwords with Have I Been Pwned. Only the first 5 characters of their SHA-1 hash go out: neither the passwords nor their full hash leave this Mac.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Button("Check for Leaks") { Task { await model.checkBreaches() } }
-                        .disabled(model.checkingBreaches || model.mode == .demo)
-                    if model.checkingBreaches { ProgressView().controlSize(.small) }
-                }
-                if let error = model.breachError {
-                    Text(error).font(.caption).foregroundStyle(.red)
-                }
-            }
-            .padding(8)
-            .background(Theme.wash(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .padding(.bottom, 8)
-        }
     }
 
     private func title(_ text: LocalizedStringKey, count: Int, detail: String) -> some View {
@@ -216,16 +184,9 @@ private struct WatchtowerSections<Row: View>: View {
                     .id("2fa-\(missing.item.id)")
                 }
             }
-        } else if watchtower.loadingTwoFactor {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Looking for sites that offer two-factor authentication…")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 8).padding(.top, 16)
-        } else if let error = watchtower.twoFactorError, model.mode == .vaultwarden {
+        } else if let error = watchtower.twoFactorError {
             title("Two-factor authentication available", count: 0,
-                  detail: String(localized: "Category skipped: the 2fa.directory list could not be downloaded (\(error))."))
+                  detail: String(localized: "Category skipped: the bundled 2fa.directory list is unreadable (\(error))."))
         }
     }
 
@@ -261,35 +222,18 @@ private struct WatchtowerSections<Row: View>: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 8).padding(.top, 4)
             }
-        } else if watchtower.loadingPasskeys {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Looking for sites that accept passkeys…")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 8).padding(.top, 16)
-        } else if let error = watchtower.passkeysError, model.mode == .vaultwarden {
+        } else if let error = watchtower.passkeysError {
             title("Passkey available", count: 0,
-                  detail: String(localized: "Category skipped: the passkeys.2fa.directory directory could not be downloaded (\(error))."))
+                  detail: String(localized: "Category skipped: the bundled passkeys.2fa.directory directory is unreadable (\(error))."))
         }
     }
 
     private func passkeyDetail(_ report: PasskeyReport) -> String {
-        var text = String(localized: "These sites accept passkeys: nothing to remember, nothing to phish. “Create a Passkey” opens the site's page; the Verrou extension for Brave or Firefox then offers to save it in the item. According to passkeys.2fa.directory")
-        if report.stale {
-            let date = Date(timeIntervalSince1970: TimeInterval(report.fetchedAt))
-            text += " " + String(localized: "(directory of \(date.formatted(date: .abbreviated, time: .omitted)), offline)")
-        }
-        return text + "."
+        String(localized: "These sites accept passkeys: nothing to remember, nothing to phish. “Create a Passkey” opens the site's page; the Verrou extension for Brave or Firefox then offers to save it in the item. According to passkeys.2fa.directory")
     }
 
     private func twoFactorDetail(_ report: TwoFactorReport) -> String {
-        var text = String(localized: "These sites offer two-factor authentication, but no one-time code is saved in Verrou. According to 2fa.directory")
-        if report.stale {
-            let date = Date(timeIntervalSince1970: TimeInterval(report.fetchedAt))
-            text += " " + String(localized: "(list of \(date.formatted(date: .abbreviated, time: .omitted)), offline)")
-        }
-        return text + "."
+        String(localized: "These sites offer two-factor authentication, but no one-time code is saved in Verrou. According to 2fa.directory")
     }
 
     private func methods(_ methods: [String]) -> String {

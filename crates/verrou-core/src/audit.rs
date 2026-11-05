@@ -1,8 +1,6 @@
 //! Vault audit: reused and weak passwords, sites over HTTP.
 //!
-//! Everything is computed locally, on the unlocked vault. The lookup of
-//! breached passwords, which needs the network, lives in
-//! `verrou-vaultwarden` (`breach`).
+//! Everything is computed locally, on the unlocked vault.
 
 use std::collections::HashMap;
 

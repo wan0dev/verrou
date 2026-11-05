@@ -79,7 +79,7 @@ STAY SECURE
 • Built-in two-factor codes (TOTP), scanned from a QR code
 • Password and passphrase generator
 • Security audit: weak, reused and old passwords
-• Breach checks with Have I Been Pwned's k-anonymity: your passwords never leave the iPhone
+• Audits your vault for weak and reused passwords, without anything leaving the iPhone
 
 WORKS OFFLINE
 • Your vault stays available without a network; changes sync when you're back online
@@ -148,7 +148,7 @@ RESTER EN SÉCURITÉ
 • Codes de double authentification (TOTP) intégrés, scannés depuis un QR code
 • Générateur de mots de passe et de phrases de passe
 • Audit de sécurité : mots de passe faibles, réutilisés et anciens
-• Vérification des fuites par k-anonymat avec Have I Been Pwned : vos mots de passe ne quittent jamais l'iPhone
+• Audit du coffre : mots de passe faibles ou réutilisés, sans rien faire sortir de l'iPhone
 
 HORS LIGNE AUSSI
 • Le coffre reste disponible sans réseau ; les modifications se synchronisent au retour de la connexion

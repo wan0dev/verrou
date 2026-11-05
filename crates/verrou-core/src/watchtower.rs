@@ -1,11 +1,11 @@
 //! Audit additions: two-factor authentication available but missing,
-//! expired or soon-to-expire cards, old passwords, and spotting of new
-//! passwords (to check them against known breaches).
+//! expired or soon-to-expire cards, and old passwords.
 //!
 //! Like `audit`, everything is computed here without network: the list of
-//! sites that offer two-factor authentication (2fa.directory) is downloaded
-//! and cached by `verrou-vaultwarden` (`two_factor_directory`), then parsed
-//! by `TwoFactorDirectory::parse`.
+//! sites that offer two-factor authentication (2fa.directory) is bundled
+//! with the app (`data/tfa.json`, refreshed by
+//! `scripts/update-directories.sh`), then parsed by
+//! `TwoFactorDirectory::parse`.
 
 use std::collections::HashMap;
 
@@ -19,6 +19,11 @@ use crate::{FieldKind, Item, ItemKind, Vault};
 pub const CARD_WARNING_DAYS: i64 = 60;
 /// A password nothing has changed for this many days (3 years).
 pub const OLD_PASSWORD_DAYS: i64 = 3 * 365;
+
+/// Snapshot of `https://api.2fa.directory/v3/tfa.json` bundled at build
+/// time (open data of the 2fa.directory project, CC BY-SA 4.0). Refreshed
+/// with `scripts/update-directories.sh`.
+pub const TWO_FACTOR_DIRECTORY: &[u8] = include_bytes!("data/tfa.json");
 
 const DAY: i64 = 24 * 60 * 60;
 
@@ -277,23 +282,6 @@ pub fn old_passwords(vault: &Vault, now: i64) -> Vec<(String, i64)> {
     old
 }
 
-// MARK: New passwords
-
-/// Active logins among `after` whose password is new: missing from
-/// `before` (item created) or different. Used to check the passwords just
-/// saved against known breaches.
-pub fn changed_passwords(before: Option<&Vault>, after: &[Item]) -> Vec<String> {
-    after
-        .iter()
-        .filter(|i| i.is_active())
-        .filter_map(|i| {
-            let password = password_of(i)?;
-            let previous = before.and_then(|b| b.get(&i.id)).and_then(password_of);
-            (previous != Some(password)).then(|| i.id.clone())
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -546,27 +534,5 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0, "ancien");
         assert!(found[0].1 > OLD_PASSWORD_DAYS);
-    }
-
-    #[test]
-    fn spots_new_and_changed_passwords() {
-        let before = Vault::new(vec![
-            login("même", "https://a.fr", "un"),
-            login("changé", "https://b.fr", "deux"),
-        ]);
-        let mut note = item("note", ItemKind::SecureNote, "", Vec::new());
-        note.notes = Some(crate::SecretString::new("texte"));
-        let after = [
-            login("même", "https://a.fr", "un"),
-            login("changé", "https://b.fr", "trois"),
-            login("créé", "https://c.fr", "quatre"),
-            login("vide", "https://d.fr", ""),
-            note,
-        ];
-        assert_eq!(
-            changed_passwords(Some(&before), &after),
-            vec!["changé".to_owned(), "créé".to_owned()]
-        );
-        assert_eq!(changed_passwords(None, before.items()).len(), 2);
     }
 }

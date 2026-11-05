@@ -1,11 +1,10 @@
-//! JSON from the network: the 2fa.directory list and the passkeys page a
-//! site publishes (/.well-known/passkey-endpoints), from any site.
+//! JSON parsed from data Verrou doesn't control: the bundled 2fa.directory
+//! list (and its refreshes, downloaded by scripts/update-directories.sh).
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use verrou_core::{passkey_upgrade, watchtower::TwoFactorDirectory};
+use verrou_core::watchtower::TwoFactorDirectory;
 
 fuzz_target!(|data: &[u8]| {
     let _ = TwoFactorDirectory::parse(data);
-    let _ = passkey_upgrade::parse_endpoints(data, "example.com");
 });

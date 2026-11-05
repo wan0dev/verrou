@@ -735,66 +735,32 @@ page ──postMessage──▶ passkeys.js ──▶ background ──encrypted
   before.
 - **Audit**: reused passwords, weak ones (estimated entropy under 60
   bits), HTTP sites, computed locally; only summaries leave the Rust core.
-- **Known breaches** (on request): Have I Been Pwned's "Pwned Passwords"
-  API by k-anonymity. Only the first 5 hexadecimal characters of each
-  password's SHA-1 leave, with padding in the responses; the comparison is
-  done on the Mac.
-- **New passwords** (setting *Check new passwords in known leaks*,
-  on by default): after a write made from Verrou (editor, extension,
-  import), the Rust core compares the vault before and after, and only the
-  logins whose password is new are checked, with the same API and the same
-  k-anonymity. Passwords that arrived by sync are not sent. Setting off:
-  nothing is sent, the queue (item identifiers, never secrets) is emptied;
-  it is also emptied on lock.
-- **Two-factor authentication available**: the full list of
-  [2fa.directory](https://2fa.directory) (`api.2fa.directory/v3/tfa.json`,
-  about 400 KB) is downloaded when the audit opens, at most once a week, and
-  kept in the account folder (`2fa-directory.json`); no request depends on
-  the vault, the comparison with the logins' sites is done on the Mac.
-  Offline, the last copy is used. Only HTTPS help links are offered.
-- **Passkey possible**: the full directory of sites that accept passkeys,
-  [passkeys.2fa.directory](https://passkeys.2fa.directory)
-  (`passkeys-api.2fa.directory/v1/supported.json`, about 75 KB, from the
-  same project as 2fa.directory), is downloaded when the audit opens, at
-  most once a week, and kept in the account folder
-  (`passkeys-directory.json`); no request depends on the vault, the
-  comparison with the logins' sites (host, then registrable domain) is done
-  on the device. Offline, the last copy is used. Only HTTPS links are
-  offered. A login that already has a passkey (its own, or the one of the
-  same account stored elsewhere) is not listed. The demo vault uses a
-  bundled excerpt, without network.
-- **"Create a Passkey"**: like "Change Password", only on click, for this
-  item alone. The Rust core reads `/.well-known/passkey-endpoints` (W3C
-  "Passkey Endpoints" standard) on the item's host then its registrable
-  domain: HTTPS only, no redirect, no cookie or `Referer`, 5 s timeout, body
-  limited to 16 KB; only `enroll` or `manage` HTTPS addresses **of the same
-  registrable domain** are kept (the file can't send elsewhere). Otherwise a
-  page known in advance (Google, GitHub, Microsoft, PayPal), otherwise the
-  address given by the directory, otherwise the site's home page. The
-  passkey is then created on the site and saved by the extension (Brave,
-  Firefox) or the AutoFill extension (iPhone), as usual. Verrou never
-  deletes the password.
+- **Two-factor authentication available**: the public list of
+  [2fa.directory](https://2fa.directory) is **bundled with the app**
+  (`crates/verrou-core/src/data/tfa.json`, about 400 KB, refreshed by
+  `scripts/update-directories.sh` and frozen at build time). The comparison
+  with the logins' sites is done on the device; nothing is sent anywhere.
+  Only HTTPS help links are offered.
+- **Passkey possible**: the public directory of sites that accept passkeys,
+  [passkeys.2fa.directory](https://passkeys.2fa.directory), is likewise
+  **bundled with the app** (`crates/verrou-core/src/data/supported.json`,
+  about 75 KB, same refresh). The comparison with the logins' sites (host,
+  then registrable domain) is done on the device; nothing is sent anywhere.
+  Only HTTPS links are offered. A login that already has a passkey (its
+  own, or the one of the same account stored elsewhere) is not listed.
+- **"Create a Passkey"**: only on click, for this item alone. A page known
+  in advance (Google, GitHub, Microsoft, PayPal), otherwise the address
+  given by the bundled directory, otherwise the site's home page. No
+  request is made to the site. The passkey is then created on the site and
+  saved by the extension (Brave, Firefox) or the AutoFill extension
+  (iPhone), as usual. Verrou never deletes the password.
 - **Cards and old passwords**: computed locally (card expiry, items'
   modification date).
 - **"Change Password"**: for a handful of big sites (Google, GitHub,
   Amazon, Microsoft, Apple, Facebook, X, LinkedIn, Dropbox), the page is
-  known in advance, without a request. For the others, the Rust core checks
-  whether the site follows the W3C "A Well-Known URL for Changing
-  Passwords" standard: `/.well-known/change-password` must answer "OK"
-  (after redirects) and
-  `/.well-known/resource-that-should-not-exist-whose-status-code-should-not-be-200`
-  must not answer "OK"; on the item's host, then its registrable domain.
-  Only on click, for this item alone, never in bulk: the requests only go to
-  the site the user is about to open, which therefore learns nothing more.
-  HTTPS only (a redirect to HTTP is not followed), no cookie or `Referer`,
-  5 s timeout, response bodies not read. Failing that, the site's home page
-  opens. No secret is sent: the new password is suggested then saved by the
-  extension, as usual.
-- **Breaches and changed passwords**: the Rust core keeps in memory the
-  SHA-256 hash of the password of each login found in breaches, at the time
-  of the check; a password changed since (Verrou, extension, sync) leaves
-  the list without a new request. These hashes are never written to disk
-  and are cleared on lock.
+  known in advance, without a request. For the others, the site's home page
+  opens. No request is made to the site. No secret is sent: the new
+  password is suggested then saved by the extension, as usual.
 
 ## Password and passphrase generator
 
@@ -1552,29 +1518,9 @@ script refuses to install a build that would have it.
 
 ## Updates (Mac)
 
-The Mac app published on GitHub updates itself with
-[Sparkle](https://sparkle-project.org) (`Verrou/App/Updates.swift`):
-
-- Once a day (and on "Check for Updates…"), it reads `appcast.xml` from the
-  latest GitHub release, over HTTPS. The feed itself is signed
-  (`SURequireSignedFeed`): a feed that isn't signed by Verrou's key is
-  ignored, so nobody can serve an older release or other notes instead.
-- An update is only installed if its EdDSA signature matches the public key
-  built into the app (`SUPublicEDKey`), checked before the disk image is
-  even opened (`SUVerifyUpdateBeforeExtraction`), and if the new app is
-  signed by the same Developer ID team. The private key only exists in the
-  `release` environment's secrets: the release workflow signs the disk image
-  and the feed with it.
-- It is downloaded in the background and installed when the app quits,
-  never by relaunching it on its own: an approval from the iPhone in
-  progress is never cut short. Settings can turn off automatic checks or
-  installs.
-- The app is sandboxed: Sparkle installs through its launcher service (two
-  `mach-lookup` exceptions limited to its own services,
-  `app.verrou.mac-spks` and `-spki`). The app already has the outgoing
-  network: Sparkle's downloader service isn't used.
-- Only builds made by `scripts/release-macos.sh` carry the public key:
-  debug, ad hoc and locally installed builds have no updater.
+The app checks for no updates and contacts no one about them: whoever
+installs it downloads the next version the same way (`scripts/build-desktop.sh`
+builds and installs it from the sources, and removes the build files).
 
 The `verrou` command ships in the app (`Contents/Helpers/verrou`), signed
 with it and notarized with it; linked into the `PATH`, it updates with the

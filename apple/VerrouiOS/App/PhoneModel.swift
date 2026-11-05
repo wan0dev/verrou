@@ -244,9 +244,6 @@ final class PhoneModel {
 
     // Audit
     private(set) var audit: AuditReport?
-    private(set) var breaches: [BreachedPassword]?
-    private(set) var checkingBreaches = false
-    var breachError: String?
     /// "Passkey possible" (`PasskeyUpgrade.swift`).
     let passkeyAudit = PhonePasskeyAudit()
 
@@ -670,8 +667,6 @@ final class PhoneModel {
         revealed = [:]
         attachments = [:]
         audit = nil
-        breaches = nil
-        breachError = nil
         passkeyAudit.reset()
         if let editor { suspendedEditor = editor.resumed(editorProgress) }
         editor = nil
@@ -951,7 +946,6 @@ final class PhoneModel {
         folders = loaded?.folders ?? session.folders()
         matchSettings = session.matchSettings()
         aliasSettings = session.emailAliasSettings()
-        if let known = breaches { breaches = session.stillBreached(breaches: known) }
         if audit != nil {
             audit = try? session.audit()
             refreshPasskeyAudit()
@@ -1559,19 +1553,6 @@ final class PhoneModel {
     func refreshAudit() {
         audit = try? session.audit()
         refreshPasskeyAudit()
-    }
-
-    /// Have I Been Pwned, by k-anonymity (5 hash characters per password).
-    func checkBreaches() async {
-        guard !checkingBreaches, lockState == .unlocked, mode == .vaultwarden else { return }
-        checkingBreaches = true
-        breachError = nil
-        defer { checkingBreaches = false }
-        do {
-            breaches = try await session.checkBreaches()
-        } catch {
-            breachError = ErrorText.describe(error)
-        }
     }
 }
 

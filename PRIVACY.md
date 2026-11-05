@@ -15,25 +15,18 @@ collected data.
 - **Your Vaultwarden server**: your vault, encrypted on your device before it
   is sent (Bitwarden's end-to-end encryption), and site names for website
   icons. Your server's operator is responsible for what it stores.
-- **Have I Been Pwned** ("Pwned Passwords", api.pwnedpasswords.com): when the
-  breach check runs, only the first 5 characters of a password's SHA-1 hash
-  are sent (k-anonymity), never the password or the full hash. The new
-  password check can be turned off in Settings.
 - **Your iCloud account**, only if you pair an iPhone to approve the Mac's
   requests: the requests and answers go through your own iCloud private
   database (CloudKit), sealed end to end between your two devices, then are
   erased; Apple's push notification service tells the iPhone a request is
   waiting, without its content.
-- **GitHub**, for the Mac app downloaded from the website: once a day and
-  when you choose "Check for Updates…" (automatic checks can be turned off
-  in Settings), Verrou downloads
-  the description of the latest release and, if it is newer, its disk image.
-  GitHub sees your IP address and the version of Verrou and of macOS (in the
-  request's User-Agent); nothing else is sent.
-- **The site of an item**, only when you tap "Change Password" or "Create a
-  Passkey" for it: Verrou asks that site whether it publishes the standard
-  addresses for those pages (`/.well-known/change-password`,
-  `/.well-known/passkey-endpoints`), without cookies.
+
+No third party is contacted: no breach check, no update check, no request to
+a site. The public lists the audit compares your vault against (sites that
+offer two-factor authentication, sites that accept passkeys) are snapshots
+bundled inside the app at build time, and "Change Password" opens either a
+page known in advance or the site's home page, without asking the site
+anything.
 
 ## On your device
 

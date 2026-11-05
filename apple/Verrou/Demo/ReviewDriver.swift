@@ -123,7 +123,6 @@ final class ReviewDriver: NSObject, NSApplicationDelegate {
         // Sidebar panes.
         let pane = LayoutAudit.Expectation(identifiers: ["pane-title", "sidebar-footer", "detail-title"], columns: 3)
         model.openAudit()
-        await model.watchtower.loadPasskeys(model.session)
         await screen("20-audit", root: RootView(), expect: pane)
         // "Passkey available": the section at the top of the pane.
         if model.watchtower.passkeys?.candidates.isEmpty ?? true {

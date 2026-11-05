@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<!-- Build signed ad hoc (scripts/install-macos.sh without VERROU_MAC_TEAM):
-	     the entitlements of Verrou.entitlements, plus loading the embedded
-	     Sparkle.framework. With the hardened runtime, macOS only loads a
-	     library signed by the app's team, and an ad hoc signature has none:
-	     the app was killed at launch ("Library missing"). Never in a team or
-	     Developer ID build. -->
+	     the entitlements of Verrou.entitlements. -->
+	<!-- Ad hoc has no team identifier, so the hardened runtime's library
+	     validation rejects the app's own Rust framework at launch ("different
+	     Team IDs"). Signed builds don't need this: app and framework share the
+	     team. -->
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<true/>
 	<key>com.apple.security.app-sandbox</key>
@@ -20,11 +20,6 @@
 	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
-	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
-	<array>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
-	</array>
 	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
 	<array>
 		<string>/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/</string>

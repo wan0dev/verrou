@@ -3,13 +3,12 @@
 //!
 //! Like `watchtower`, everything is computed here without network: the
 //! directory of sites that accept passkeys (passkeys.2fa.directory) is
-//! downloaded whole and cached by `verrou-vaultwarden` (`passkey_directory`),
-//! then parsed by `PasskeyDirectory::parse`. No request per site.
+//! bundled with the app (`data/supported.json`, refreshed by
+//! `scripts/update-directories.sh`), then parsed by
+//! `PasskeyDirectory::parse`. No request per site.
 //!
 //! The page where to create the passkey ("Create a passkey") is looked up
-//! only on demand and for a single item: the W3C "Passkey Endpoints"
-//! standard (`/.well-known/passkey-endpoints`), checked by
-//! `verrou_vaultwarden::passkey_setup`, then a short table of big sites
+//! only on demand and for a single item: a short table of big sites
 //! (`known_setup_url`), then the directory's address or the home page.
 
 use std::collections::HashMap;
@@ -21,8 +20,10 @@ use crate::matching::{host_of, registrable_domain};
 use crate::watchtower::lookup_domain;
 use crate::{FieldKind, Item, ItemKind, Vault};
 
-/// Standard path of a site's passkey addresses (W3C).
-pub const ENDPOINTS_PATH: &str = "/.well-known/passkey-endpoints";
+/// Snapshot of `https://passkeys-api.2fa.directory/v1/supported.json`
+/// bundled at build time (open data of the 2fa.directory project,
+/// CC BY-SA 4.0). Refreshed with `scripts/update-directories.sh`.
+pub const PASSKEY_DIRECTORY: &[u8] = include_bytes!("data/supported.json");
 
 /// Maximum length of the directory notes kept for display.
 const MAX_NOTES: usize = 300;
@@ -257,9 +258,8 @@ pub fn passkey_candidates<'d>(
 
 // MARK: Setup page
 
-/// Big sites that don't publish `/.well-known/passkey-endpoints`, and
-/// their passkeys page (or account security page), by registrable
-/// domain. Short list, to keep up to date by hand.
+/// Big sites and their passkeys page (or account security page), by
+/// registrable domain. Short list, to keep up to date by hand.
 const KNOWN: &[(&[&str], &str)] = &[
     (
         &["google.com", "youtube.com", "gmail.com"],
@@ -291,46 +291,6 @@ pub fn known_setup_url(host: &str) -> Option<String> {
         .iter()
         .find(|(domains, _)| domains.contains(&domain.as_str()))
         .map(|(_, url)| (*url).to_owned())
-}
-
-/// Addresses published by a site (`/.well-known/passkey-endpoints`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Endpoints {
-    /// Page where to create a passkey.
-    pub enroll: Option<String>,
-    /// Page where to manage one's passkeys.
-    pub manage: Option<String>,
-}
-
-impl Endpoints {
-    /// The page to open to create a passkey: `enroll`, otherwise `manage`.
-    pub fn setup(&self) -> Option<&str> {
-        self.enroll.as_deref().or(self.manage.as_deref())
-    }
-}
-
-#[derive(Deserialize)]
-struct RawEndpoints {
-    #[serde(default)]
-    enroll: Option<String>,
-    #[serde(default)]
-    manage: Option<String>,
-}
-
-/// Reads the response of `/.well-known/passkey-endpoints`. Only HTTPS
-/// addresses on the same registrable domain as `host` are kept: the file
-/// must not be able to send the user elsewhere.
-pub fn parse_endpoints(json: &[u8], host: &str) -> Option<Endpoints> {
-    let raw: RawEndpoints = serde_json::from_slice(json).ok()?;
-    let site = registrable_domain(host)?;
-    let same_site = |url: Option<String>| {
-        https(url).filter(|u| registrable_domain(u).as_deref() == Some(site.as_str()))
-    };
-    let endpoints = Endpoints {
-        enroll: same_site(raw.enroll),
-        manage: same_site(raw.manage),
-    };
-    endpoints.setup().is_some().then_some(endpoints)
 }
 
 #[cfg(test)]
@@ -573,36 +533,6 @@ mod tests {
         assert_eq!(known_setup_url("github.com.evil.fr"), None);
         for (_, url) in KNOWN {
             assert!(url.starts_with("https://"), "{url}");
-        }
-    }
-
-    #[test]
-    fn endpoints_stay_on_the_same_site() {
-        let json = br#"{"enroll": "https://exemple.fr/compte/passkeys/nouvelle",
-                        "manage": "https://exemple.fr/compte/passkeys"}"#;
-        let endpoints = parse_endpoints(json, "login.exemple.fr").unwrap();
-        assert_eq!(
-            endpoints.setup(),
-            Some("https://exemple.fr/compte/passkeys/nouvelle")
-        );
-        // Manage only.
-        let manage = parse_endpoints(
-            br#"{"manage": "https://id.exemple.fr/passkeys"}"#,
-            "exemple.fr",
-        );
-        assert_eq!(
-            manage.unwrap().setup(),
-            Some("https://id.exemple.fr/passkeys")
-        );
-        // Elsewhere, over HTTP, empty or unreadable: nothing.
-        for json in [
-            &br#"{"enroll": "https://hameconnage.fr/passkeys"}"#[..],
-            br#"{"enroll": "http://exemple.fr/passkeys"}"#,
-            br#"{"enroll": "javascript:alert(1)"}"#,
-            b"{}",
-            b"<html>",
-        ] {
-            assert_eq!(parse_endpoints(json, "exemple.fr"), None);
         }
     }
 }

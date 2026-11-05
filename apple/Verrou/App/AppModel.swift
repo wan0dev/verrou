@@ -103,10 +103,6 @@ final class AppModel {
     /// The middle column shows the audit instead of the list.
     var showAudit: Bool { pane == .audit }
     private(set) var audit: AuditReport?
-    /// `nil`: not checked yet (only on request: network).
-    private(set) var breaches: [BreachedPassword]?
-    private(set) var checkingBreaches = false
-    var breachError: String?
     /// Item whose change-password page is being looked up
     /// (`changePassword`, in `Watchtower.swift`).
     var changingPassword: String?
@@ -671,29 +667,8 @@ final class AppModel {
     /// the selection if the item still exists.
     func openAudit() {
         audit = try? session.audit()
-        watchtower.refresh(session, network: mode == .vaultwarden)
+        watchtower.refresh(session)
         pane = .audit
-    }
-
-    /// Adds to the leaks already displayed those of the passwords just
-    /// checked (`checkNewPasswords`).
-    func mergeBreaches(_ found: [BreachedPassword]) {
-        guard var known = breaches else { return }
-        known.removeAll { old in found.contains { $0.item.id == old.item.id } }
-        breaches = (known + found).sorted { $0.count > $1.count }
-    }
-
-    /// Have I Been Pwned, through k-anonymity (5 hash characters per password).
-    func checkBreaches() async {
-        guard !checkingBreaches, lockState == .unlocked else { return }
-        checkingBreaches = true
-        breachError = nil
-        defer { checkingBreaches = false }
-        do {
-            breaches = try await session.checkBreaches()
-        } catch {
-            breachError = Self.describe(error)
-        }
     }
 
     /// What the reload reads from the Rust core, read off the main thread
@@ -708,11 +683,8 @@ final class AppModel {
         reloads += 1
         if showAudit {
             audit = try? session.audit()
-            watchtower.refresh(session, network: mode == .vaultwarden)
+            watchtower.refresh(session)
         }
-        // A changed password (here, in the browser, or elsewhere then
-        // synced) leaves the leak list without a new check.
-        if let known = breaches { breaches = session.stillBreached(breaches: known) }
         let start = ContinuousClock.now
         defer { Perf.log.notice("list reload (\(self.summaries.count) items): \(Perf.ms(since: start)) ms") }
         summaries = loaded?.summaries ?? (try? session.summaries()) ?? []
@@ -770,8 +742,6 @@ final class AppModel {
         quickQuery = ""
         pane = nil
         audit = nil
-        breaches = nil
-        breachError = nil
         changingPassword = nil
         watchtower.reset()
         // The vault window stays mounted behind the lock screen: nothing
@@ -1346,7 +1316,6 @@ final class AppModel {
         reloadVault()
         if let id { selection = session.resolveItemId(id: id) }
         if pendingChanges == 0 { syncState = .idle }
-        checkNewPasswords()
         // A write first sends what was waiting: its report follows.
         Task { await showSyncReport() }
     }

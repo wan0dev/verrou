@@ -7,14 +7,6 @@ options:
     watchOS: "10.0"
   createIntermediateGroups: true
   developmentLanguage: en
-packages:
-  # Updates of the Mac app outside the App Store (Verrou/App/Updates.swift).
-  # Public: the scripts pass -packageAuthorizationProvider netrc, otherwise
-  # Xcode looks for github.com credentials in the keychain and waits for a
-  # keychain prompt.
-  Sparkle:
-    url: https://github.com/sparkle-project/Sparkle
-    exactVersion: 2.10.0
 settings:
   base:
     # Swift 6 language mode: data races are compile errors, and isolation is
@@ -45,10 +37,6 @@ settings:
     # VerrouAutoFillMac/VerrouAutoFillMac.entitlements with a team. Xcode
     # checks extensions after signing: it can't be removed during the build.
     VERROU_MAC_AUTOFILL_ENTITLEMENTS: ""
-    # EdDSA public key of the updates (scripts/release-macos.sh): empty, the
-    # Mac app doesn't look for updates.
-    VERROU_SPARKLE_PUBLIC_KEY: ""
-    VERROU_SPARKLE_FEED: https://github.com/bonout/verrou/releases/latest/download/appcast.xml
     ENABLE_HARDENED_RUNTIME: YES
     DEAD_CODE_STRIPPING: YES
 targets:
@@ -82,7 +70,6 @@ targets:
     dependencies:
       - framework: Frameworks/VerrouFFI.xcframework
         embed: true
-      - package: Sparkle
       # System credential provider (Safari, Mac apps): removed from the
       # bundle of an ad hoc build (by scripts/install-macos.sh).
       - target: VerrouAutoFillMac
@@ -95,20 +82,6 @@ targets:
           - UTTypeIdentifier: app.verrou.items
             UTTypeDescription: Verrou items
             UTTypeConformsTo: [public.data]
-        # Updates (Verrou/App/Updates.swift): only builds given the public key
-        # (scripts/release-macos.sh) check for them. The app is sandboxed:
-        # Sparkle installs through its launcher service.
-        SUFeedURL: $(VERROU_SPARKLE_FEED)
-        SUPublicEDKey: $(VERROU_SPARKLE_PUBLIC_KEY)
-        SUEnableInstallerLauncherService: true
-        # The appcast is signed with the same key, and an update's signature
-        # is checked before its disk image is even opened.
-        SURequireSignedFeed: true
-        SUVerifyUpdateBeforeExtraction: true
-        SUEnableAutomaticChecks: true
-        # Downloaded in the background, installed when the app quits (Settings
-        # turn it off).
-        SUAutomaticallyUpdate: true
     # The copied extension yields the Firefox one (same code, other manifest),
     # then both get a version derived from their content: Brave reloads it by
     # itself when the app is updated (extension/update.js).

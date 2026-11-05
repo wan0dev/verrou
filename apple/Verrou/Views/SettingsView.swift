@@ -104,8 +104,6 @@ private struct GeneralSettings: View {
                         .foregroundStyle(.secondary)
                 }
             }
-
-            UpdatesSection()
         }
     }
 
@@ -176,7 +174,6 @@ private struct SecuritySettings: View {
                 if let remote = model.remote {
                     RemoteApprovalSection(remote: remote)
                 }
-                NewPasswordBreachSection()
             }
         }
     }
@@ -445,39 +442,6 @@ struct BrowserSection: View {
     }
 }
 
-/// Updates of the app (`Updates`): only in release builds.
-private struct UpdatesSection: View {
-    /// Optional: the offscreen review shows Settings without an updater.
-    @Environment(Updates.self) private var updates: Updates?
-
-    var body: some View {
-        if let updates, updates.isAvailable {
-            UpdatesControls(updates: updates)
-        }
-    }
-}
-
-private struct UpdatesControls: View {
-    @Bindable var updates: Updates
-
-    var body: some View {
-        Section {
-            Toggle("Check for updates automatically", isOn: $updates.automaticallyChecks)
-            Toggle("Download and install updates automatically", isOn: $updates.automaticallyInstalls)
-                .disabled(!updates.automaticallyChecks)
-            LabeledContent("Verrou \(Updates.version)") {
-                Button("Check Now") { updates.check() }
-                    .disabled(!updates.canCheck)
-            }
-        } header: {
-            Text("Updates")
-        } footer: {
-            Text("Installed when you quit Verrou, once its signature is checked.")
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
 /// The `verrou` command shipped in the app (Contents/Helpers/verrou): linked
 /// into the PATH, it updates with the app. The sandbox can't write outside
 /// the app's container: the user pastes the command in Terminal.
@@ -516,20 +480,6 @@ struct CommandLineSection: View {
                 Text("Paste it in Terminal: “verrou” then updates with the app.")
                     .foregroundStyle(.secondary)
             }
-        }
-    }
-}
-
-/// Check of new passwords in known leaks (`AppModel.checkNewPasswords`).
-private struct NewPasswordBreachSection: View {
-    @AppStorage(Watchtower.checkNewPasswordsKey) private var checkNewPasswords = true
-
-    var body: some View {
-        Section {
-            Toggle("Check new passwords in known leaks", isOn: $checkNewPasswords)
-        } footer: {
-            Text("Asks Have I Been Pwned with only the first 5 characters of the password's SHA-1 hash.")
-                .foregroundStyle(.secondary)
         }
     }
 }

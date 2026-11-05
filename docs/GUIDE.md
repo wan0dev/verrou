@@ -108,23 +108,19 @@ around a Rust core.
   extension. Touch ID when the site asks for user verification. An item's
   passkeys (site, user, date) show in its details and can be deleted there.
 - **Security audit**: reused, weak and plain-HTTP passwords, computed
-  locally; known breaches on request through Have I Been Pwned (k-anonymity:
-  only 5 characters of each password's SHA-1 leave the Mac). Also: sites that
+  locally. Also: sites that
   offer two-factor authentication while the login has no one-time code
-  (from the full [2fa.directory](https://2fa.directory) list, downloaded at
-  most weekly and cached, with a link to the site's 2FA help page), cards
+  (from the [2fa.directory](https://2fa.directory) list bundled with the
+  app, with a link to the site's 2FA help page), cards
   expired or expiring within 60 days, and logins untouched for more than
-  3 years. A password created or changed in Verrou (editor, Brave, import) is
-  checked against known breaches in the background, with an alert if it
-  appears there (Settings → *Security*, on by default).
+  3 years.
 - **Upgrade to passkeys**: the audit's *Passkey possible* section lists the
   logins whose site accepts passkeys (from the
-  [passkeys.2fa.directory](https://passkeys.2fa.directory) list, downloaded
-  whole at most weekly and cached, matched by registrable domain) and that
+  [passkeys.2fa.directory](https://passkeys.2fa.directory) list bundled with
+  the app, matched by registrable domain) and that
   have no passkey yet, with the site's passkey help page. *Create a Passkey*
-  opens the site's passkey page: the one it publishes at
-  `/.well-known/passkey-endpoints` (asked only when you click, for that site
-  only), a known page for a few big sites, or its home page. In Brave and
+  opens the site's passkey page: a known page for a few big sites, the
+  directory's address, or its home page. In Brave and
   Firefox the extension then offers to save the new passkey in Verrou; on
   iPhone, Verrou is the AutoFill provider, so Safari saves it there. The
   login leaves the list on the next sync; keep the password as a fallback,
@@ -132,18 +128,14 @@ around a Rust core.
   removes it for you). The audit header (Mac) and summary (iPhone) count
   these logins.
 - **Change a password in one click**: *Change Password* on the audit
-  rows (known breaches, reused, weak, old, plain HTTP), in a login's details
+  rows (reused, weak, old, plain HTTP), in a login's details
   and in its context menu opens the site's change-password page. A short
-  built-in list covers big sites that don't follow the standard (Google,
-  GitHub, Amazon, Microsoft, Apple, Facebook, X, LinkedIn, Dropbox); other
-  sites are asked, when you click and for that site only, whether they follow
-  the W3C [Well-Known URL for Changing Passwords](https://w3c.github.io/webappsec-change-password-url/)
-  (`/.well-known/change-password`, on the login's host, then its registrable
-  domain; HTTPS only, no cookies, 5 s timeout). If not, Verrou opens the
+  built-in list covers big sites (Google,
+  GitHub, Amazon, Microsoft, Apple, Facebook, X, LinkedIn, Dropbox); for the
+  others Verrou opens the
   site's home page and says so. On the page, the Brave/Firefox extension
   suggests a strong password on the new-password field and offers to update
-  the login after you submit; the audit row then disappears (breaches
-  included: a changed password leaves the list without a new check).
+  the login after you submit; the audit row then disappears.
 - **Shared vaults** (Vaultwarden organizations, like 1Password's shared
   vaults): the sidebar lists each organization and its collections with
   their counts; items show where they are shared. Shared items are edited
@@ -454,8 +446,7 @@ interface is in French, with the system's look (Liquid Glass on iOS 26).
   shared.
 - **Generator tab**: passwords and passphrases (same settings as the Mac),
   copied with the same clipboard rules.
-- **Audit**: reused, weak and plain-HTTP passwords, and known breaches on
-  request (Have I Been Pwned, k-anonymity).
+- **Audit**: reused, weak and plain-HTTP passwords.
 - **Settings**: account, last sync, pending changes, sync now; Face ID,
   auto-lock delay, clipboard delay, lock now; site icons; about and
   licenses; sign out of this iPhone (erases the account, cache and Face ID

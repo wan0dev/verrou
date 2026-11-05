@@ -29,12 +29,6 @@ struct VerrouApp: App {
         .defaultSize(width: 1180, height: 760)
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
-            CommandGroup(after: .appInfo) {
-                if delegate.updates.isAvailable {
-                    Button("Check for Updates…") { delegate.updates.check() }
-                        .disabled(!delegate.updates.canCheck)
-                }
-            }
             CommandGroup(replacing: .appSettings) {
                 SettingsLink { Text("Settings…") }
                     .keyboardShortcut(",", modifiers: .command)
@@ -120,7 +114,6 @@ struct VerrouApp: App {
         Settings {
             SettingsView()
                 .environment(delegate.model)
-                .environment(delegate.updates)
         }
 
         MenuBarExtra(isInserted: $showMenuBarExtra) {
@@ -364,7 +357,6 @@ struct RootView: View {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
-    let updates = Updates()
     private(set) var quickAccess: QuickAccessController?
     private(set) var generator: GeneratorWindow?
     /// Filling in apps (⌘\), through quick access.

@@ -2,8 +2,8 @@ import Observation
 import UIKit
 
 /// "Passkey possible" on the iPhone: logins whose site accepts passkeys,
-/// according to the passkeys.2fa.directory directory (downloaded whole,
-/// kept 7 days by the Rust core; no request per site).
+/// according to the passkeys.2fa.directory directory bundled with the app
+/// (no request per site).
 ///
 /// "Create a passkey" opens the site's page in Safari: Verrou is the
 /// AutoFill provider there, so the created passkey is saved in the vault
@@ -13,7 +13,6 @@ import UIKit
 final class PhonePasskeyAudit {
     /// `nil`: not loaded yet (or unavailable, see `error`).
     private(set) var report: PasskeyReport?
-    private(set) var loading = false
     private(set) var error: String?
     /// Item whose creation page is being looked up.
     private(set) var opening: String?
@@ -26,13 +25,10 @@ final class PhonePasskeyAudit {
 
     var count: Int { report?.candidates.count ?? 0 }
 
-    func load(_ session: VaultSession) async {
-        guard !loading else { return }
+    func load(_ session: VaultSession) {
         signals = (try? session.credentialSignalFindings()) ?? []
-        loading = true
-        defer { loading = false }
         do {
-            report = try await session.passkeyAudit()
+            report = try session.passkeyAudit()
             error = nil
         } catch {
             report = nil
@@ -48,20 +44,19 @@ final class PhonePasskeyAudit {
         focus = false
     }
 
-    /// Opens the page where to create the passkey: the one the site
-    /// publishes (`/.well-known/passkey-endpoints`, verified for this site
-    /// only), otherwise a known page, otherwise the site's home. Returns the message to show.
+    /// Opens the page where to create the passkey: a page known in advance,
+    /// otherwise the site's home. Returns the message to show.
     func open(_ candidate: PasskeyCandidate, session: VaultSession) async -> Toast? {
         guard opening == nil else { return nil }
         opening = candidate.item.id
         defer { opening = nil }
         let hint = String(localized: "When Safari offers to save the passkey, choose Verrou.")
         do {
-            let page = try await session.passkeySetupPage(id: candidate.item.id)
+            let page = try session.passkeySetupPage(id: candidate.item.id)
             guard let url = URL(string: page.url) else { return nil }
             await UIApplication.shared.open(url)
             switch page.source {
-            case .wellKnown, .known:
+            case .known:
                 return Toast(message: String(localized: "Passkeys page opened"), detail: hint, seconds: 6)
             case .home:
                 return Toast(message: String(localized: "This site doesn't indicate its passkeys page"),
@@ -75,11 +70,10 @@ final class PhonePasskeyAudit {
 }
 
 extension PhoneModel {
-    /// Loads "Passkey possible" (demo vault: embedded excerpt of the
-    /// directory, no network).
+    /// Loads "Passkey possible" (from the directory bundled with the app).
     func refreshPasskeyAudit() {
         guard lockState == .unlocked else { return }
-        Task { await passkeyAudit.load(session) }
+        passkeyAudit.load(session)
     }
 
     /// Passkeys created by Safari in the background after a fill

@@ -58,7 +58,7 @@ German, Spanish and Italian.
   passkey autofill get them as the pill's top suggestion, before passwords.
   In Brave, the extension reloads itself when Verrou is updated.
 - **Audit your vault**: reused, weak and old passwords, plain-HTTP sites,
-  known breaches (Have I Been Pwned), expiring cards, and sites that offer
+  expiring cards, and sites that offer
   two-factor authentication you haven't turned on. *Change Password*
   opens the site's change-password page in one click, and the extension then
   suggests a strong password and saves it.
@@ -125,19 +125,13 @@ German, Spanish and Italian.
 ## Private
 
 Your vault is decrypted only on your Mac, by Bitwarden's official Rust SDK.
-Verrou talks to your own server, with two exceptions:
-
-- **Breach checks** send only the first 5 characters of a password's SHA-1
-  hash to Have I Been Pwned. The whole vault is checked when you ask; new
-  passwords are checked automatically, which you can turn off in Settings.
-- **The audit** downloads the public [2fa.directory](https://2fa.directory)
-  list and its [passkeys directory](https://passkeys.2fa.directory), at most
-  once a week each, as whole files: it never asks about your sites one by one.
-- **Change Password** asks only the site you are about to open
-  whether it has a [change-password page](https://w3c.github.io/webappsec-change-password-url/),
-  and only when you click. **Create a Passkey** does the same for the site's
-  [passkey page](https://w3c.github.io/webappsec-passkey-endpoints/)
-  (`/.well-known/passkey-endpoints`).
+Verrou talks to your own server and to no third party: no breach check, no
+update check, no request to a site. The audit's public lists
+([2fa.directory](https://2fa.directory) and its
+[passkeys directory](https://passkeys.2fa.directory)) are snapshots bundled
+inside the app, and **Change Password** / **Create a Passkey** open either a
+page known in advance or the site's home page, without asking the site
+anything.
 
 The browser extension only receives the logins of the site in front of it, over
 an end-to-end encrypted channel. Copied secrets are hidden from clipboard
@@ -161,9 +155,8 @@ with `SHA256SUMS` and a build attestation for each file
 2. Open Verrou and enter your server address, e-mail and master password,
    then your second factor. Touch ID unlocks it from then on.
 
-Verrou updates itself: it checks GitHub once a day, downloads a new version
-in the background and installs it when you quit the app, after checking its
-signature (Settings → General → Updates).
+From the sources, `scripts/build-desktop.sh` builds the app (Mac and browser
+extension only), installs it and removes the build files.
 
 Optional, from Verrou's Settings:
 

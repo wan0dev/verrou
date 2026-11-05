@@ -1,24 +1,11 @@
 //! A site's change-password page.
 //!
-//! W3C spec "A Well-Known URL for Changing Passwords": a site that follows
-//! it redirects `https://<host>/.well-known/change-password` to its
-//! change-password page. This module makes no request: it computes
-//! the addresses to try; the check (on demand, one site at a time)
-//! is in `verrou_vaultwarden::change_password`.
-//!
-//! A few big sites don't follow the spec but have a stable settings
-//! page: a short table (`KNOWN`) serves them directly, with no
-//! request.
+//! This module makes no request. A few big sites have a stable settings
+//! page: a short table (`KNOWN`) serves them directly. The page is looked
+//! up in `verrou_vaultwarden::change_password`, which falls back to the
+//! site's home page.
 
 use crate::matching::{host_of, registrable_domain};
-
-/// Standard path of the change-password page.
-pub const WELL_KNOWN_PATH: &str = "/.well-known/change-password";
-
-/// Resource that must not exist: a site that answers 200 to it answers 200
-/// to everything, and its answer to `WELL_KNOWN_PATH` proves nothing.
-pub const NOT_FOUND_PATH: &str =
-    "/.well-known/resource-that-should-not-exist-whose-status-code-should-not-be-200";
 
 /// Domains covered by a `KNOWN` entry.
 enum Domains {
@@ -29,8 +16,8 @@ enum Domains {
     AnySuffix(&'static str),
 }
 
-/// Big sites without `/.well-known/change-password`, and their change
-/// page (or account security page). `{domain}`: the item's registrable
+/// Big sites and their change page (or account security page).
+/// `{domain}`: the item's registrable
 /// domain (`amazon.fr` stays on `amazon.fr`). Short list, kept up to date
 /// by hand: an address that changes simply stops being the right page,
 /// the site then redirects to its home page.
@@ -121,23 +108,9 @@ pub fn origin(host: &str) -> String {
     format!("https://{host}")
 }
 
-/// Standard address of the change page for a host.
-pub fn well_known_url(host: &str) -> String {
-    format!("{}{WELL_KNOWN_PATH}", origin(host))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn well_known_url_follows_the_spec() {
-        assert_eq!(
-            well_known_url("exemple.fr"),
-            "https://exemple.fr/.well-known/change-password"
-        );
-        assert_eq!(origin("exemple.fr"), "https://exemple.fr");
-    }
 
     #[test]
     fn candidates_are_the_host_then_its_registrable_domain() {
@@ -160,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn known_sites_skip_the_probe() {
+    fn known_sites_open_directly() {
         assert_eq!(
             known_url("accounts.google.com").as_deref(),
             Some("https://myaccount.google.com/signinoptions/password")

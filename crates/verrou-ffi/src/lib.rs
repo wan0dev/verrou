@@ -915,14 +915,6 @@ pub struct WeakPassword {
     pub bits: f64,
 }
 
-/// A login whose password appears in known breaches.
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct BreachedPassword {
-    pub item: ItemSummary,
-    /// Number of appearances in the breaches listed by Have I Been Pwned.
-    pub count: u64,
-}
-
 /// How long a confirmation holds for a protected item.
 const REPROMPT_WINDOW: Duration = Duration::from_secs(5 * 60);
 
@@ -952,13 +944,6 @@ pub struct VaultSession {
     confirmations: Arc<Confirmations>,
     /// Export read, waiting for confirmation (secrets included).
     pending_import: Mutex<Option<import::PendingImport>>,
-    /// Logins whose password was just saved from Verrou, waiting for
-    /// `check_new_passwords`.
-    new_passwords: Mutex<Vec<String>>,
-    /// Fingerprint (SHA-256) of the password of each login found in
-    /// breaches, at check time: a password changed since then leaves the
-    /// list (`still_breached`). Cleared on lock.
-    breached: Mutex<HashMap<String, [u8; 32]>>,
     /// Items with an offline change waiting for the server.
     pending_items: RwLock<HashSet<String>>,
     /// Items created offline: temporary id → server.
@@ -1039,8 +1024,6 @@ impl VaultSession {
             authorized: Mutex::new(HashMap::new()),
             confirmations: Arc::default(),
             pending_import: Mutex::new(None),
-            new_passwords: Mutex::new(Vec::new()),
-            breached: Mutex::new(HashMap::new()),
             pending_items: RwLock::new(HashSet::new()),
             remapped: RwLock::new(HashMap::new()),
             pending_invite: Mutex::new(None),
@@ -1694,39 +1677,6 @@ impl VaultSession {
         Ok(true)
     }
 
-    /// Breached passwords, through Have I Been Pwned (k-anonymity: only the
-    /// first 5 characters of each password's SHA-1 are sent). Only on the
-    /// user's explicit request.
-    pub async fn check_breaches(&self) -> Result<Vec<BreachedPassword>, VerrouError> {
-        let candidates: Vec<(String, SecretString)> = self.with_vault(|v| {
-            Ok(v.items()
-                .iter()
-                .filter(|i| i.is_active())
-                .filter_map(|i| {
-                    verrou_core::audit::password_of(i).map(|p| (i.id.clone(), SecretString::new(p)))
-                })
-                .collect())
-        })?;
-        let passwords: Vec<&str> = candidates.iter().map(|(_, p)| p.expose()).collect();
-        let counts = verrou_vaultwarden::breach::pwned_counts(&passwords).await?;
-        let mut breached: Vec<BreachedPassword> = self.with_vault(|v| {
-            Ok(candidates
-                .iter()
-                .zip(counts)
-                .filter(|(_, count)| *count > 0)
-                .filter_map(|((id, _), count)| {
-                    v.get(id).map(|i| BreachedPassword {
-                        item: summary(i),
-                        count,
-                    })
-                })
-                .collect())
-        })?;
-        self.remember_breached(&candidates, &breached);
-        breached.sort_by_key(|b| std::cmp::Reverse(b.count));
-        Ok(breached)
-    }
-
     /// Checks the master password (confirmation of a protected item without
     /// Touch ID). Offline, from the cache.
     pub async fn verify_master_password(&self, password: String) -> Result<bool, VerrouError> {
@@ -1855,8 +1805,6 @@ impl VaultSession {
             authorized: Mutex::new(HashMap::new()),
             confirmations: Arc::default(),
             pending_import: Mutex::new(None),
-            new_passwords: Mutex::new(Vec::new()),
-            breached: Mutex::new(HashMap::new()),
             pending_items: RwLock::new(HashSet::new()),
             remapped: RwLock::new(HashMap::new()),
             pending_invite: Mutex::new(None),
@@ -1966,11 +1914,6 @@ impl VaultSession {
             .unwrap_or_else(PoisonError::into_inner)
             .clear();
         self.cancel_import();
-        self.forget_new_passwords();
-        self.breached
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clear();
         // Reread from disk at the next opening (possibly another account).
         *self.usage.lock().unwrap_or_else(PoisonError::into_inner) =
             verrou_core::usage::UsageLog::default();
