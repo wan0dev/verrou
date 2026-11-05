@@ -133,19 +133,57 @@ struct VerrouApp: App {
     }
 }
 
+/// The main window, from anywhere: the menu bar, a notification, the
+/// extension's "unlock". Closed, SwiftUI has torn its scene down with it, so
+/// only the `openWindow` action of a scene still alive can bring it back: the
+/// menu bar icon registers that action (`MenuBarIcon`), always on screen
+/// while its setting is on. The Dock icon, which only follows the window (see
+/// `AppDelegate`), comes back with it.
+@MainActor
+enum MainScene {
+    /// `openWindow(id: "main")`, registered by the menu bar icon.
+    static var reopen: (() -> Void)?
+    /// A reopen event is on its way: it must not send another one.
+    private static var reopening = false
+
+    static func show() {
+        // Offscreen review: nothing must appear, nor the app come to the front.
+        guard !AppModel.isReview else { return }
+        // An accessory app has no Dock icon and no app menu: give them back
+        // with the window.
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate()
+        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" }) {
+            window.makeKeyAndOrderFront(nil)
+        } else if let reopen {
+            reopen()
+        } else if !reopening {
+            // No menu bar icon: a reopen event, as a click on the Dock sends
+            // it, recreates the scene.
+            reopening = true
+            NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
+                DispatchQueue.main.async { reopening = false }
+            }
+        }
+    }
+}
+
 /// Menu bar icon: padlock closed or open, depending on the vault.
 struct MenuBarIcon: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Image(systemName: model.lockState == .unlocked ? "lock.open.fill" : "lock.fill")
             .accessibilityLabel(model.lockState == .unlocked ? "Verrou, unlocked" : "Verrou, locked")
+            .onAppear { MainScene.reopen = { openWindow(id: "main") } }
+            // The scene goes away with the icon: nothing left to call.
+            .onDisappear { MainScene.reopen = nil }
     }
 }
 
 struct MenuBarMenu: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
     let quickAccess: () -> Void
     let generator: () -> Void
 
@@ -181,8 +219,7 @@ struct MenuBarMenu: View {
     }
 
     private func showMainWindow() {
-        openWindow(id: "main")
-        NSApp.activate()
+        MainScene.show()
     }
 }
 
@@ -381,6 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.windows.filter { $0.identifier?.rawValue == "main" }.forEach { $0.close() }
             }
         }
+        watchWindows()
         if ProcessInfo.processInfo.environment["VERROU_DEMO"] == "1" {
             demo = DemoDriver(model: model, quickAccess: quickAccess)
             demo?.start()
@@ -399,7 +437,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
 
+    /// `true`: one of the app's windows is on screen (panels don't count).
+    private var hasWindows: Bool {
+        NSApp.windows.contains { !($0 is NSPanel) && ($0.isVisible || $0.isMiniaturized) }
+    }
+
+    /// The Dock icon follows the windows: closed, the app lives in the menu
+    /// bar alone (`NSApp.setActivationPolicy(.accessory)` drops the Dock icon
+    /// and the app menu, keeps the windows and the status items). Called
+    /// after each close or opening, once the window's state has settled.
+    private func followWindows() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            // Without the menu bar icon, the Dock icon is the only way back.
+            let menuBarIcon = UserDefaults.standard.object(forKey: "showMenuBarExtra") as? Bool ?? true
+            let wanted: NSApplication.ActivationPolicy = hasWindows || !menuBarIcon ? .regular : .accessory
+            guard NSApp.activationPolicy() != wanted else { return }
+            NSApp.setActivationPolicy(wanted)
+        }
+    }
+
+    private func watchWindows() {
+        let center = NotificationCenter.default
+        for name in [NSWindow.willCloseNotification, NSWindow.didBecomeKeyNotification,
+                     NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.followWindows() }
+            }
+        }
+        // The menu bar setting changes while the app runs.
+        center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.followWindows() }
+        }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// A click on the app (Finder, Spotlight): the main window comes back.
+    /// With the menu bar icon, its registered `openWindow` recreates it;
+    /// without it, `true` leaves the reopen to SwiftUI's own scene.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag, MainScene.reopen != nil { MainScene.show() }
+        return true
+    }
 
     /// An answer from the iPhone (silent iCloud notification): read it
     /// without waiting for the next poll.

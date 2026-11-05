@@ -276,18 +276,26 @@
     notice(state, reason);
   }
 
-  // Verrou locked: offer to unlock it, then resume.
-  function locked(request, resume) {
+  // Verrou locked: it comes forward and asks for Touch ID (or the master
+  // password) by itself, then the request resumes. Refused or cancelled: the
+  // button, for a retry.
+  async function locked(request, resume) {
+    panel.show(
+      head(t("unlockWait"), t("unlockHint")),
+      actions(button(t("cancel"), "", () => cancel(request))),
+    );
+    const unlocked = await send({ kind: "unlock" });
+    if (request.done) return;
+    if (unlocked?.ok) {
+      resume(0);
+      return;
+    }
     panel.show(
       head(t("passkeyLockedTitle"), siteOf(request)),
       actions(
         button(t("passkeyUseBrowser"), "quiet", () => toBrowser(request)),
         button(t("cancel"), "", () => cancel(request)),
-        button(t("unlock"), "primary", async () => {
-          await send({ kind: "unlock" });
-          panel.show(head(t("unlockWait"), t("unlockHint")));
-          resume(0);
-        }),
+        button(t("unlock"), "primary", () => locked(request, resume)),
       ),
     );
   }

@@ -364,6 +364,29 @@ test("the passkey arrives after loading: the pill comes to offer it, then remove
 
 // MARK: Verrou locked
 
+test("Verrou locked, the page loads: the pill waits, no Touch ID by itself", async () => {
+  const background = fakeBackground({ state: "locked" });
+  openPage(loginForm, background);
+  await eventually(() => background.sent("suggest").length === 1, "search");
+  // A page must not raise a Touch ID prompt on its own.
+  await sleep(200);
+  assert.equal(background.sent("unlock").length, 0);
+});
+
+test("Verrou locked, the field's icon: Verrou unlocks by itself", async () => {
+  const background = fakeBackground({ state: "locked" });
+  const page = openPage(loginForm, background);
+  await eventually(() => background.sent("suggest").length === 1, "search");
+  page.byId("email").focus();
+  page.fire([...page.host("verrou-field").shadow.walk()].find((n) => n.tagName === "BUTTON"), "click");
+  // The pill was put up by the page: one click on the icon asks for the
+  // unlock, no "Unlock" to click.
+  await eventually(() => background.sent("unlock").length === 1, "unlock asked by itself");
+  await eventually(() => page.pillText().includes("Unlock Verrou"), "waiting for the unlock");
+  background.state = "unlocked";
+  await eventually(() => page.pillText().includes("Sign in"), "logins once unlocked", 3000);
+});
+
 test("Verrou locked: \"Unlock\", then the logins", async () => {
   const background = fakeBackground({ state: "locked" });
   const page = openPage(loginForm, background);
@@ -746,6 +769,34 @@ test("the save banner in the same corner as the pill", async () => {
   assert.equal(background.sent("confirmSave").length, 0, "made-up click: nothing");
   page.press("Not now");
   await eventually(() => !banner(), "banner closed");
+});
+
+test("the locked save banner: \"Unlock\" waits visibly at once, a refusal brings the offer back", async () => {
+  const background = fakeBackground({ items: [] });
+  const handle = background.handle;
+  let answerUnlock;
+  background.handle = async (message) => {
+    if (message.kind === "pendingSave") {
+      return { action: "locked", username: "camille@exemple.fr", site: "connect.maif.fr" };
+    }
+    if (message.kind === "unlock") {
+      return new Promise((resolve) => { answerUnlock = resolve; });
+    }
+    return handle(message);
+  };
+  const page = openPage(loginForm, background);
+  const banner = () => page.host("verrou-pill")?.shadow?.querySelector(".banner");
+  await eventually(banner, "banner");
+  assert.match(banner().textContent, /Save in Verrou\?/);
+  page.press("Unlock");
+  // The waiting state shows at once: the background answers only once Verrou
+  // reports the vault open (up to two minutes), and the banner must not sit
+  // on its buttons all that time.
+  assert.match(banner().textContent, /Unlock Verrou…/);
+  assert.match(banner().textContent, /Touch ID or master password/);
+  answerUnlock({ ok: false });
+  await eventually(() => /Save in Verrou\?/.test(banner()?.textContent ?? ""), "the offer back after a refusal");
+  assert.match(banner().textContent, /Unlock/, "the button, for another try");
 });
 
 test("the save banner is announced, and \"Saved in Verrou\" stays until read or closed", async () => {

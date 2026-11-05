@@ -378,6 +378,34 @@ async function render() {
   });
 }
 
+// Verrou unlocked from the popup: the login list follows without waiting for
+// the next render (the popup stays open). The background answers
+// `kind: "unlock"` once the vault is open (or after two minutes).
+//
+// One automatic attempt per popup: a second would ask for Touch ID again on
+// each render, the user having just cancelled it. Verrou cannot say
+// "refused": a cancelled Touch ID looks like one still waiting, so after
+// UNLOCK_RETRY_MS the button comes back, to ask again without waiting the
+// full two minutes.
+const UNLOCK_RETRY_MS = 15_000;
+let autoUnlock = "idle"; // idle → asking → asked
+let askedAt = 0;
+
+async function askUnlock(button = null) {
+  autoUnlock = "asking";
+  askedAt = Date.now();
+  button?.remove();
+  const retry = setTimeout(scheduleRender, UNLOCK_RETRY_MS);
+  try {
+    return await send({ kind: "unlock" });
+  } finally {
+    clearTimeout(retry);
+    autoUnlock = "asked";
+    // Unlocked: `renderUnlocked`; still locked: the button comes back.
+    scheduleRender();
+  }
+}
+
 async function renderStatus(status, pairing) {
   const versionNote = versionWarning(status.extension);
   const accessNote = (await missingSiteAccess()) ? siteAccessRequest() : null;
@@ -394,8 +422,32 @@ async function renderStatus(status, pairing) {
       break;
     case "locked": {
       stateLabel.textContent = t("popupLocked");
+      // Verrou asks for Touch ID (or the master password) by itself when the
+      // popup opens on a locked vault: no second click on "Unlock".
+      if (autoUnlock === "idle") {
+        show(
+          element("p", { textContent: t("popupVerrouLocked") }),
+          element("p", { className: "sub", textContent: t("unlockHint") }),
+        );
+        askUnlock();
+        break;
+      }
+      if (autoUnlock === "asking") {
+        const shown = [
+          element("p", { textContent: t("popupVerrouLocked") }),
+          element("p", { className: "sub", textContent: t("unlockHint") }),
+        ];
+        if (Date.now() - askedAt >= UNLOCK_RETRY_MS) {
+          const button = element("button", { textContent: t("popupUnlockVerrou") });
+          button.addEventListener("click", () => askUnlock(button));
+          shown.push(button);
+        }
+        show(...shown);
+        break;
+      }
+      // Still locked (cancelled, or no Touch ID): the button, for a retry.
       const button = element("button", { textContent: t("popupUnlockVerrou") });
-      button.addEventListener("click", () => send({ kind: "unlock" }));
+      button.addEventListener("click", () => askUnlock(button));
       show(element("p", { textContent: t("popupVerrouLocked") }), button);
       break;
     }

@@ -152,6 +152,15 @@ ext.alarms.onAlarm.addListener((alarm) => {
 });
 updater.check().catch(() => {});
 
+// MARK: Unlock on demand
+//
+// `kind: "unlock"` asks Verrou to come forward and unlock: the app shows
+// Touch ID (or the master password) by itself, so the user only has to touch
+// the sensor. Only sent after a real gesture of the user — opening the
+// popup, the pill, a passkey panel — never for a page that merely loads
+// (`suggest`): a page must not take the focus nor raise a Touch ID prompt on
+// its own.
+
 async function suggest(url) {
   try {
     const reply = await call({ cmd: "suggest", url });
@@ -160,6 +169,32 @@ async function suggest(url) {
   } catch (error) {
     return { state: stateOf(error) };
   }
+}
+
+const UNLOCK_WAIT_MS = 120_000;
+
+/// Asks for the unlock and waits for Verrou to report it open. `false`: it
+/// stayed locked (refused, wrong password, or the app went away). A newer
+/// Verrou answers with the outcome — "denied" the moment the user cancels,
+/// "done" only once the vault is open; an older one answers "done" at once,
+/// and the polling below says what really happened.
+async function unlockAndWait() {
+  try {
+    const reply = await call({ cmd: "unlock" });
+    if (reply?.result === "denied") return false;
+  } catch {
+    // The app went away: the polling below reports it.
+  }
+  const end = Date.now() + UNLOCK_WAIT_MS;
+  while (Date.now() < end) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      if ((await call({ cmd: "status" })).unlocked) return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 async function fill(url, item) {
@@ -469,8 +504,9 @@ async function handle(message, sender) {
     case "alias":
       return alias(sender.url);
     case "unlock":
-      await call({ cmd: "unlock" }).catch(() => {});
-      return { ok: true };
+      // Answered once Verrou reports the vault open (or after a timeout):
+      // the caller shows its waiting state meanwhile, no polling of its own.
+      return { ok: await unlockAndWait() };
     case "openLinkSite":
       return openLinkSite(sender);
     case "capture":

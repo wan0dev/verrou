@@ -4,6 +4,20 @@ What changes for you in each release. The release workflow publishes the
 section of the tagged version as the GitHub release notes: write it before
 tagging (docs/RELEASING.md).
 
+## Unreleased
+
+**Mac**
+- Closing the main window leaves Verrou in the menu bar alone: no Dock icon
+  while no window is open. The padlock, a click on the app in Finder or
+  Spotlight, or ⌘⇧Space brings the window back, with its Dock icon.
+  Settings → *Show in the menu bar* off keeps the Dock icon instead.
+
+**Extension**
+- Locked vault: opening the extension's popup, opening the pill from the
+  field's icon, or answering a passkey request now asks Verrou for Touch ID
+  by itself, instead of waiting for a click on *Unlock*. A page that merely
+  loads never raises the prompt.
+
 ## 0.6.4
 
 **Mac**

@@ -79,7 +79,10 @@ around a Rust core.
   into the pill. ✕ or Escape hides it for the rest of the page. Nothing is
   attached to the field anymore, so the site's own suggestion lists are left
   alone. Vault locked: the pill says *Verrou is locked* with
-  *Unlock* (Touch ID). The extension is linked to the app once, by
+  *Unlock* (Touch ID); opening the pill by hand from the field's icon, or
+  opening the extension's popup, asks Verrou for Touch ID by itself, so one
+  click is enough — a page that merely loads never does. The extension is
+  linked to the app once, by
   comparing a 6-digit code; the channel is then end-to-end encrypted, and it
   only receives the logins of the site in front of it, over HTTPS. On a "new
   password" field the pill suggests a strong password (and fills the
@@ -257,7 +260,11 @@ around a Rust core.
   with highlighting, detail view (click to copy, colored password, TOTP codes
   with countdown, cards, identities, notes, SSH keys), **Quick Access ⌘⇧Space**
   from any app, **site icons** served by the account's own Vaultwarden, a
-  **padlock in the menu bar**, and launch at login (Settings). Every item
+  **padlock in the menu bar**, and launch at login (Settings). Closing the
+  main window leaves the app in the menu bar with no Dock icon (Settings →
+  *Show in the menu bar*; without the icon the Dock icon stays); the padlock,
+  a click on the app in Finder or Spotlight, or ⌘⇧Space brings the window
+  back. Every item
   command is in the **Item** menu (copy username ⌃⌘C, password ⇧⌘C,
   code ⌥⌘C, website ⌥⇧⌘C; *Edit Item…* ⌘E, favorites, archive,
   *Share…*, *Open Website* ⇧⌘O, *Move to Trash* ⌘⌫); Edit → *Find…* (⌘F)

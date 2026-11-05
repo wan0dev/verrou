@@ -1531,16 +1531,10 @@ final class AppModel {
     }
 
     /// Main window in the foreground. Closed (launched at login), a "reopen"
-    /// recreates it, like a click on the Dock.
+    /// recreates it, like a click on the Dock; the Dock icon comes back with
+    /// it (see `MainScene`).
     func showMainWindow() {
-        // Offscreen review: nothing must appear, nor the app come to the front.
-        guard !Self.isReview else { return }
-        NSApp.activate()
-        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" }) {
-            window.makeKeyAndOrderFront(nil)
-        } else {
-            NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration())
-        }
+        MainScene.show()
     }
 
     func noteActivity() {

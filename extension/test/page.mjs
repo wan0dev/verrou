@@ -51,6 +51,9 @@ export function fakeBackground({ state = "unlocked", items = LOGINS, cards = [],
           return background.state === "unlocked" ? { state: "unlocked", cards, identities } : { state: background.state };
         case "fillForm":
           return { ok: true, data: { kind: "card", cardholder: "Camille Martin", number: "4000000000000005", exp_month: "9", exp_year: "2029", code: "321" } };
+        case "unlock":
+          // The real background waits for the vault to open before answering.
+          return { ok: true };
         case "pendingSave":
           return {};
         case "alias":

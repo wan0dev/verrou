@@ -955,16 +955,19 @@
     if (reply?.ok && target) applyForm(reply.data, target);
   }
 
-  // After "Unlock" or "Open Verrou": the pill fills in as soon as Verrou
-  // is open (a minute and a half at most).
+  // After "Unlock" (or by itself, the pill opened by hand on a locked vault):
+  // the background answers once Verrou reports the vault open, and the pill
+  // fills in. Refused or cancelled, the "Unlock" button comes back.
   async function unlock(anchor, kind) {
     pill.wait(t("unlockWait"), t("unlockHint"));
     const token = pill.token;
-    await send({ kind: "unlock" });
     const form = kind === "card" || kind === "identity";
-    for (let tries = 0; tries < 90; tries += 1) {
-      await sleep(1000);
-      if (pill.token !== token) return;
+    const answer = await send({ kind: "unlock" });
+    if (pill.token !== token) return;
+    // Unlocked (or the answer got lost on the way): read the site's logins.
+    // A few tries ride out a page that answers late.
+    for (let tries = 0; answer?.ok && tries < 5 && pill.token === token; tries += 1) {
+      if (tries) await sleep(1000);
       const reply = await send({ kind: form ? "forms" : "suggest" });
       if (pill.token !== token) return;
       if (reply.state === "locked" || reply.state === "offline") continue;
@@ -974,7 +977,7 @@
       else pill.hide();
       return;
     }
-    if (pill.token === token) pill.hide();
+    if (pill.token === token) pill.show(anchor, kind, lockedView(anchor, kind));
   }
 
   // MARK: What the pill offers
@@ -985,6 +988,9 @@
       subtitle: t("verrouLocked"),
       primary: { label: t("unlock"), run: () => unlock(anchor, kind) },
       others: [],
+      // The pill opened on a locked vault: Verrou asks for Touch ID by
+      // itself, the user only clicks the field's icon (see `offer`).
+      locked: true,
     };
   }
 
@@ -1183,6 +1189,13 @@
       return;
     }
     if (!manual && (dismissed || pill.busy)) return;
+    // Opened by hand on a locked vault (the field's icon): Verrou comes
+    // forward and asks for Touch ID by itself, one click is enough. The page
+    // loading by itself never does (see `scan`).
+    if (manual && view.locked && !pill.open) {
+      unlock(anchor, kind);
+      return;
+    }
     const keepOpen = refresh && pill.open && pill.expanded;
     pill.show(anchor, kind, view, { expanded: keepOpen || (manual && !view.primary) });
   }
@@ -1329,10 +1342,17 @@
       this.input = null;
     },
 
-    // Opens the pill for this field (even after a close), or closes it.
+    // Opens the pill for this field (even after a close), or closes it. On a
+    // locked vault the pill was put up by the page: a click on the icon asks
+    // for the unlock (Touch ID) instead of closing it. Waiting, it just
+    // closes (`hide` moves the token on: the unlock in flight stops).
     toggle() {
       const input = this.input;
       if (pill.open) {
+        if (!pill.busy && pill.view?.locked && input) {
+          unlock(pill.anchor ?? input, pill.kind ?? classify(input));
+          return;
+        }
         pill.hide();
         return;
       }
@@ -1472,9 +1492,12 @@
           null,
           trustedButton(t("bannerNotNow"), "", dismissSave),
           trustedButton(t("unlock"), "primary", async () => {
-            await send({ kind: "unlock" });
             banner.show({ title: t("unlockWait"), subtitle: t("unlockHint") });
-            waitThenOffer();
+            const result = await send({ kind: "unlock" });
+            // Unlocked: the offer as soon as Verrou has it; refused or
+            // cancelled: the same banner, for another try.
+            if (result?.ok) waitThenOffer();
+            else showOffer();
           }),
         ),
       );
