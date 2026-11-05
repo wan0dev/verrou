@@ -76,6 +76,10 @@ pub enum ApprovalScope {
 
 /// The time given to the user to answer an approval request.
 const CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(90);
+/// The time given to the user to unlock the vault after a client asked for
+/// it. Past it the asker learns "refused", not "done": a cancelled Touch ID
+/// must not look like a vault still waiting to be unlocked.
+const UNLOCK_TIMEOUT: Duration = Duration::from_secs(120);
 /// Extension: beyond `BULK_ITEMS` different items released to a
 /// client within `BULK_WINDOW`, each further item requires the user's
 /// approval ([`Purpose::Bulk`]). The client itself asserts the page's
@@ -106,8 +110,11 @@ pub trait Backend: Send + Sync + 'static {
     /// A client asks to unlock: bring Verrou to the foreground (the
     /// browser), or ask the paired iPhone if the user is away from the Mac
     /// (the terminal). `reason`: the terminal's, cleaned (empty if none);
-    /// `then`: what it will read once unlocked, cleaned.
-    fn request_unlock(&self, kind: ClientKind, reason: &str, then: Option<&UnlockIntent>);
+    /// `then`: what it will read once unlocked, cleaned. Resolved once the
+    /// user unlocked (`true`) or gave up (`false`): the reply to the client
+    /// waits for it.
+    fn request_unlock(&self, kind: ClientKind, reason: &str, then: Option<&UnlockIntent>)
+    -> BoxFuture<'_, bool>;
     /// Pairing request: show `code` and ask for approval, then
     /// answer with [`Bridge::answer_pairing`].
     fn pairing_requested(&self, request: PairingRequest);
@@ -511,8 +518,26 @@ async fn answer(shared: &Shared, client: &str, iv: &str, data: &str) -> Outgoing
         | Command::PasskeyCreate(_)) => passkey(shared, &info, command).await,
         Command::Unlock { then } => {
             let then = then.map(|intent| intent.cleaned());
-            backend.request_unlock(info.kind, &reason, then.as_ref());
-            ReplyResult::Done
+            if backend.is_unlocked() {
+                ReplyResult::Done
+            } else {
+                // Answered with the outcome: the extension and the terminal
+                // learn "refused" at once instead of watching a still locked
+                // vault until they give up ([`UNLOCK_TIMEOUT`]).
+                let unlocked = tokio::time::timeout(
+                    UNLOCK_TIMEOUT,
+                    backend.request_unlock(info.kind, &reason, then.as_ref()),
+                )
+                .await
+                .unwrap_or(false);
+                if unlocked {
+                    ReplyResult::Done
+                } else {
+                    ReplyResult::Denied {
+                        reason: "unlock refused".to_owned(),
+                    }
+                }
+            }
         }
         Command::Check {
             url,

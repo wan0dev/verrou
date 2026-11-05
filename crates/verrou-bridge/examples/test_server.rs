@@ -92,8 +92,10 @@ impl Backend for Fake {
         _kind: verrou_bridge::protocol::ClientKind,
         _reason: &str,
         _then: Option<&verrou_bridge::protocol::UnlockIntent>,
-    ) {
+    ) -> BoxFuture<'_, bool> {
         println!("UNLOCK");
+        let _ = std::io::stdout().flush();
+        Box::pin(async { true })
     }
 
     fn read(&self, reader: &mut dyn FnMut(&Vault)) -> bool {

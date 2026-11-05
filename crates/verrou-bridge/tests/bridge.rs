@@ -26,6 +26,8 @@ struct FakeBackend {
     vault: Mutex<Vault>,
     unlocked: AtomicBool,
     unlock_requested: AtomicBool,
+    /// The user refuses the unlock (a cancelled Touch ID).
+    unlock_refused: AtomicBool,
     /// The user confirmed the protected items (Touch ID).
     confirmed: AtomicBool,
     pairings: Mutex<mpsc::Sender<PairingRequest>>,
@@ -99,8 +101,11 @@ impl Backend for FakeBackend {
         _kind: ClientKind,
         _reason: &str,
         _then: Option<&verrou_bridge::protocol::UnlockIntent>,
-    ) {
+    ) -> BoxFuture<'_, bool> {
         self.unlock_requested.store(true, Ordering::SeqCst);
+        // `false`: the user cancelled the Touch ID prompt.
+        let unlocked = !self.unlock_refused.load(Ordering::SeqCst);
+        Box::pin(async move { unlocked })
     }
 
     fn pairing_requested(&self, request: PairingRequest) {
@@ -290,6 +295,7 @@ fn start_with(
         vault: Mutex::new(Vault::new(items)),
         unlocked: AtomicBool::new(true),
         unlock_requested: AtomicBool::new(false),
+        unlock_refused: AtomicBool::new(false),
         confirmed: AtomicBool::new(false),
         pairings: Mutex::new(sender),
         approve: AtomicBool::new(false),
@@ -497,6 +503,11 @@ fn pairing_then_fill_for_the_matching_site_only() {
         "done"
     );
     assert!(backend.unlock_requested.load(Ordering::SeqCst));
+    // A refused unlock is told apart from a vault still locked: the reply
+    // comes with the outcome, not at once.
+    backend.unlock_refused.store(true, Ordering::SeqCst);
+    assert_eq!(client.request(&json!({ "cmd": "unlock" }))["result"], "denied");
+    backend.unlock_refused.store(false, Ordering::SeqCst);
     let save_locked = client.request(&json!({ "cmd": "save", "url": "https://github.com/",
         "username": "camille", "password": "x" }));
     assert_eq!(save_locked["result"], "locked");

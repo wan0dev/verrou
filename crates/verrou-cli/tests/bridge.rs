@@ -81,10 +81,11 @@ impl Backend for Fake {
         _kind: verrou_bridge::protocol::ClientKind,
         _reason: &str,
         then: Option<&verrou_bridge::protocol::UnlockIntent>,
-    ) {
+    ) -> verrou_bridge::BoxFuture<'_, bool> {
         self.intents.lock().unwrap().push(then.cloned());
         std::thread::sleep(Duration::from_millis(300));
         self.unlocked.store(true, Ordering::SeqCst);
+        Box::pin(async { true })
     }
 
     fn pairing_requested(&self, request: PairingRequest) {

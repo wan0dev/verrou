@@ -16,7 +16,12 @@ tagging (docs/RELEASING.md).
 - Locked vault: opening the extension's popup, opening the pill from the
   field's icon, or answering a passkey request now asks Verrou for Touch ID
   by itself, instead of waiting for a click on *Unlock*. A page that merely
-  loads never raises the prompt.
+  loads never raises the prompt. A prompt the user cancels brings the button
+  back at once, and two asks share one prompt.
+
+**Terminal**
+- `verrou` learns the outcome of the unlock it asked for: a refusal says so
+  at once, instead of the command watching a locked vault until it gives up.
 
 ## 0.6.4
 

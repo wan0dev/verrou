@@ -986,7 +986,7 @@ pub struct VaultSession {
     alias: RwLock<verrou_core::alias::AliasSettings>,
 }
 
-/// Pending approval requests: the app answers with
+/// Pending approval and unlock requests: the app answers with
 /// `answer_bridge_confirmation`, from the main thread.
 #[derive(Default)]
 struct Confirmations {
@@ -2511,9 +2511,11 @@ pub trait BridgeDelegate: Send + Sync {
     /// `reason`: the terminal's, as for `confirm_requested`. `then_item`,
     /// `then_field`: what the terminal will read once unlocked (empty if it
     /// didn't say): shown in the iPhone's request, whose approval then
-    /// covers that item.
+    /// covers that item. Answer with `answer_bridge_confirmation(id, …)`
+    /// once the user unlocked (or gave up): the client's reply waits for it.
     fn unlock_requested(
         &self,
+        id: String,
         kind: BridgeClientKind,
         reason: String,
         then_item: String,
@@ -2679,11 +2681,40 @@ impl Backend for SessionBackend {
         })
     }
 
-    fn request_unlock(&self, kind: ClientKind, reason: &str, then: Option<&UnlockIntent>) {
+    fn request_unlock(
+        &self,
+        kind: ClientKind,
+        reason: &str,
+        then: Option<&UnlockIntent>,
+    ) -> BoxFuture<'_, bool> {
         let (item, field) =
             then.map_or_else(Default::default, |t| (t.item.clone(), t.field.clone()));
+        let id = self
+            .confirmations
+            .next
+            .fetch_add(1, Ordering::Relaxed)
+            .to_string();
+        let (sender, answer) = tokio::sync::oneshot::channel();
+        self.confirmations
+            .pending
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id.clone(), sender);
         self.delegate
-            .unlock_requested(kind.into(), reason.to_owned(), item, field);
+            .unlock_requested(id.clone(), kind.into(), reason.to_owned(), item, field);
+        let pending = PendingConfirmation {
+            confirmations: &self.confirmations,
+            id,
+        };
+        Box::pin(async move {
+            let unlocked = answer.await.unwrap_or(false);
+            drop(pending);
+            // The answer must still be true a beat later: the vault may lock
+            // again in between (then the client reads "refused", not a vault
+            // it believes open).
+            unlocked
+                && self.session.upgrade().is_some_and(|session| session.is_unlocked())
+        })
     }
 
     fn pairing_requested(&self, request: PairingRequest) {
@@ -3074,7 +3105,7 @@ mod tests {
         ) {
             self.0.answer(&id, true);
         }
-        fn unlock_requested(&self, _kind: BridgeClientKind, _reason: String, _: String, _: String) {
+        fn unlock_requested(&self, _: String, _kind: BridgeClientKind, _reason: String, _: String, _: String) {
         }
         fn vault_changed(&self, _: String, _: String) {}
         fn reprompt_requested(&self, _: String, _: String) {}
@@ -3288,7 +3319,7 @@ mod optimistic_tests {
             _: String,
         ) {
         }
-        fn unlock_requested(&self, _kind: BridgeClientKind, _reason: String, _: String, _: String) {
+        fn unlock_requested(&self, _: String, _kind: BridgeClientKind, _reason: String, _: String, _: String) {
         }
         fn vault_changed(&self, item: String, _: String) {
             self.0.lock().unwrap().push(item);

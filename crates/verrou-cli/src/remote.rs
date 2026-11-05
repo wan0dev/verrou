@@ -250,10 +250,15 @@ impl Remote {
     }
 
     fn unlock(&mut self) -> Result<(), Error> {
-        self.call(&Command::Unlock {
-            then: self.intent.clone(),
-        })?;
         eprintln!("verrou: vault locked, unlock it in Verrou…");
+        match self.call(&Command::Unlock {
+            then: self.intent.clone(),
+        })? {
+            // A newer Verrou answers with the outcome; an older one at once.
+            ReplyResult::Denied { reason } => return Err(Error::Denied(reason)),
+            ReplyResult::Done if self.unlocked()? => return Ok(()),
+            _ => {}
+        }
         let start = Instant::now();
         while start.elapsed() < UNLOCK_WAIT {
             if self.unlocked()? {

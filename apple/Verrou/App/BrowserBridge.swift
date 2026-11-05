@@ -26,6 +26,11 @@ final class BrowserBridge {
     private(set) var clients: [BridgeClient] = []
     /// Confirmations in progress: the extension retries every second.
     @ObservationIgnored private var confirming: Set<String> = []
+    /// Unlock requests waiting for the current attempt (the extension may
+    /// ask from its popup and from a page at once): one prompt, answered
+    /// together.
+    @ObservationIgnored private var pendingUnlocks: Set<String> = []
+    @ObservationIgnored private var unlocking = false
     /// The iPhone approved "unlock and read <item>": that item's next
     /// reading by the terminal needs no second approval (once, for 60 s,
     /// exact identifier or title).
@@ -126,8 +131,17 @@ final class BrowserBridge {
         }
     }
 
-    fileprivate func unlockRequested(kind: BridgeClientKind, reason: String, thenItem: String, thenField: String) {
-        guard model.lockState == .locked else { return }
+    fileprivate func unlockRequested(id: String, kind: BridgeClientKind, reason: String, thenItem: String, thenField: String) {
+        pendingUnlocks.insert(id)
+        // Opened in the meantime (another client's ask, or the app itself).
+        if model.lockState == .unlocked { finishUnlocks(true); return }
+        // A Touch ID sheet is already up (this ask or the app's own): no
+        // second prompt, the answer comes with its outcome.
+        if model.lockState == .unlocking || unlocking {
+            waitForUnlock()
+            return
+        }
+        unlocking = true
         // Away from the Mac, the terminal waits for the iPhone (the window
         // stays locked).
         if kind == .cli, let remote = model.remote {
@@ -140,15 +154,50 @@ final class BrowserBridge {
                 let unlocked = await model.unlockFromPhone(client: String(localized: "the terminal"), reason: reason,
                                                            then: then)
                 if unlocked, let then { unlockGrant = (then.item, Date().addingTimeInterval(60)) }
+                finishUnlocks(unlocked)
             }
             return
         }
         NSApp.activate()
         if model.canUseTouchID, !model.needsLogin {
-            Task { await model.unlockWithBiometrics() }
+            Task {
+                await model.unlockWithBiometrics()
+                // Cancelled or failed: back to the lock screen.
+                finishUnlocks(model.lockState == .unlocked)
+            }
         } else {
+            // The master password: the window is up, the answer comes when
+            // the vault opens.
             model.showMainWindow()
+            waitForUnlock()
         }
+    }
+
+    /// Watches for the vault to open (a password being typed, or an attempt
+    /// started elsewhere): answers then, or when the bridge stops waiting
+    /// (2 minutes, like the Rust side's timeout).
+    private func waitForUnlock() {
+        Task { [weak self] in
+            let start = Date()
+            while Date().timeIntervalSince(start) < 120, let self {
+                if model.lockState == .unlocked {
+                    finishUnlocks(true)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            self?.finishUnlocks(self?.model.lockState == .unlocked)
+        }
+    }
+
+    /// The attempt is over: every asker gets the same answer, `true` the
+    /// vault is open.
+    private func finishUnlocks(_ unlocked: Bool) {
+        unlocking = false
+        for id in pendingUnlocks {
+            model.session.answerBridgeConfirmation(id: id, approved: unlocked)
+        }
+        pendingUnlocks.removeAll()
     }
 
     fileprivate func vaultChanged(item: String, title: String) {
@@ -337,10 +386,10 @@ private final class Callbacks: BridgeDelegate, @unchecked Sendable {
         }
     }
 
-    func unlockRequested(kind: BridgeClientKind, reason: String, thenItem: String, thenField: String) {
+    func unlockRequested(id: String, kind: BridgeClientKind, reason: String, thenItem: String, thenField: String) {
         DispatchQueue.main.async { [weak bridge] in
             MainActor.assumeIsolated {
-                bridge?.unlockRequested(kind: kind, reason: reason, thenItem: thenItem, thenField: thenField)
+                bridge?.unlockRequested(id: id, kind: kind, reason: reason, thenItem: thenItem, thenField: thenField)
             }
         }
     }
