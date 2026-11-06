@@ -1,3 +1,4 @@
+import AppKit
 import ServiceManagement
 import SwiftUI
 
@@ -199,7 +200,7 @@ struct MenuBarMenu: View {
         }
         Divider()
         SettingsLink { Text("Settings…") }
-        Button("Quit Verrou") { NSApp.terminate(nil) }
+        Button("Quit Verrou") { (NSApp.delegate as? AppDelegate)?.quit() }
             .keyboardShortcut("q")
     }
 
@@ -373,6 +374,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// "current" afterwards.
     private var launchedAtLogin = false
 
+    /// The Quit item asked to quit: `applicationShouldTerminate` lets that
+    /// one through.
+    private var quitting = false
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         launchedAtLogin = LaunchAtLogin.launchedAtLogin
         // Sharing notifications: before launch finishes, to receive the tap
@@ -429,9 +434,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
 
-    /// `true`: one of the app's windows is on screen (panels don't count).
+    /// `true`: one of the app's windows is on screen. Panels don't count,
+    /// and neither may the menu bar icon's own windows: `NSStatusBarWindow`
+    /// is no panel and reports visible for as long as the item sits in the
+    /// menu bar — only a window that can become main (titled, as the app's
+    /// real windows are) keeps the Dock icon around.
     private var hasWindows: Bool {
-        NSApp.windows.contains { !($0 is NSPanel) && ($0.isVisible || $0.isMiniaturized) }
+        NSApp.windows.contains {
+            !($0 is NSPanel) && $0.canBecomeMain && ($0.isVisible || $0.isMiniaturized)
+        }
     }
 
     /// The Dock icon follows the windows: closed, the app lives in the menu
@@ -449,21 +460,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The observer tokens ([`watchWindows`]): a block observer whose token
+    /// is released is cancelled — they must live as long as the app.
+    private var windowWatchers: [NSObjectProtocol] = []
+
     private func watchWindows() {
         let center = NotificationCenter.default
         for name in [NSWindow.willCloseNotification, NSWindow.didBecomeKeyNotification,
                      NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification] {
-            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            windowWatchers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.followWindows() }
-            }
+            })
         }
         // The menu bar setting changes while the app runs.
-        center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+        windowWatchers.append(center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.followWindows() }
-        }
+        })
+        // The launch state: launched at login, the window was closed above,
+        // before these observers existed.
+        followWindows()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// SwiftUI ends a menu-bar-only app by itself: once the last window
+    /// has closed, the next interaction with the menu performs a bare
+    /// terminate: (no AppleEvent reason). Staying in the menu bar is the
+    /// point, so that one is cancelled — a real quit still goes through,
+    /// from the Quit item (the flag above), from the system (a logout
+    /// carries a reason), or from the app menu, which only exists while a
+    /// window is open.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if quitting { return .terminateNow }
+        let reason = NSAppleEventManager.shared().currentAppleEvent?
+            .attributeDescriptor(forKeyword: kAEQuitReason)?.stringValue
+        guard reason == nil, sender.activationPolicy() == .accessory, !hasWindows else { return .terminateNow }
+        return .terminateCancel
+    }
+
+    /// Quit for real, from the menu bar's Quit item.
+    func quit() {
+        quitting = true
+        NSApp.terminate(nil)
+    }
 
     /// A click on the app (Finder, Spotlight): the main window comes back.
     /// With the menu bar icon, its registered `openWindow` recreates it;
