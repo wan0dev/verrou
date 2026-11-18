@@ -20,6 +20,14 @@ const server = spawn(`${root}target/debug/examples/test_server`, {
   env: { ...process.env, VERROU_BRIDGE_PORT: "0" },
   stdio: ["ignore", "pipe", "inherit"],
 });
+// Every host the tests spawn: the file's event loop waits for their pipes,
+// and one that misses its exit keeps `node --test` hanging forever.
+const hosts = [];
+const launchHost = (options) => {
+  const host = spawn(`${root}target/debug/verrou-native-host`, options);
+  hosts.push(host);
+  return host;
+};
 const lines = createInterface({ input: server.stdout });
 const codes = [];
 let port;
@@ -34,11 +42,19 @@ before(async () => {
   lines.on("line", (line) => line.startsWith("CODE ") && codes.push(line.slice(5)));
 });
 
-after(() => server.kill());
+after(() => {
+  for (const host of hosts) {
+    if (host.exitCode === null) {
+      console.error("a host did not exit by itself: killed");
+      host.kill();
+    }
+  }
+  server.kill();
+});
 
 // Native Messaging transport over the host: "length (u32 LE) + JSON" frames.
 function hostTransport() {
-  const host = spawn(`${root}target/debug/verrou-native-host`, {
+  const host = launchHost({
     env: { ...process.env, VERROU_BRIDGE_PORT: port },
     stdio: ["pipe", "pipe", "inherit"],
   });
@@ -149,7 +165,7 @@ test("a made-up key gets nothing", async () => {
 test("Verrou unreachable: the extension knows it", async () => {
   // Closed port: the host tries to open the app, gives up, and says so.
   const closed = new Channel(() => {
-    const host = spawn(`${root}target/debug/verrou-native-host`, {
+    const host = launchHost({
       env: { ...process.env, VERROU_BRIDGE_PORT: "1", VERROU_BRIDGE_NO_LAUNCH: "1" },
       stdio: ["pipe", "pipe", "inherit"],
     });
