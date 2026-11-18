@@ -157,10 +157,7 @@ fn suggestions_follow_last_use() {
             .id
             .clone()
     };
-    let last_used = HashMap::from([
-        (id_of("GitHub — work account"), 20),
-        (id_of("GitHub"), 10),
-    ]);
+    let last_used = HashMap::from([(id_of("GitHub — work account"), 20), (id_of("GitHub"), 10)]);
     let used: Vec<_> = v
         .suggestions_with_usage(url, &last_used)
         .iter()

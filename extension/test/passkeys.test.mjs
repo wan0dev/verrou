@@ -318,3 +318,36 @@ test("creation, then sign-ins signed by Verrou", async () => {
   assert.deepEqual(local.items.map((p) => p.item), [fresh.item]);
   channel.disconnect();
 });
+
+test("a protected login's passkey: one confirmation, then the approval holds", async () => {
+  // The bridge spaces pairing requests by a few seconds: the previous
+  // test's pairing is still too close.
+  await new Promise((resolve) => setTimeout(resolve, 3500));
+  const channel = new Channel(hostTransport);
+  try {
+    channel.setClient(await channel.pair("Brave", () => {}));
+    const page = "https://protege.example/compte";
+    const challenge = codec.encode(crypto.getRandomValues(new Uint8Array(32)));
+    const before = events.length;
+    const confirms = () => events.slice(before).filter((line) => line.startsWith("CONFIRM"));
+
+    const created = await channel.request({
+      cmd: "passkey_create", url: page, rp_id: "protege.example", rp_name: "Exemple",
+      user_id: "AQID", user_name: "camille", challenge, algorithms: [-7], exclude: [], uv: true,
+      attestation: "none", item: "protege",
+    });
+    assert.equal(created.result, "registration", JSON.stringify(created));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.deepEqual(confirms(), ["CONFIRM passkey Site protégé"], "one confirmation covers the protected item");
+
+    const used = await channel.request({
+      cmd: "passkey_get", url: page, rp_id: "protege.example", item: "protege",
+      credential: created.credential, challenge, uv: true,
+    });
+    assert.equal(used.result, "assertion", JSON.stringify(used));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.deepEqual(confirms(), ["CONFIRM passkey Site protégé"], "the approval holds for the next use");
+  } finally {
+    channel.disconnect();
+  }
+});

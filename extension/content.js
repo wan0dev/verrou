@@ -1455,9 +1455,10 @@
 
   async function fillCode(item, anchor) {
     const credentials = await send({ kind: "fill", item });
-    // Locked, or a protected item awaiting its confirmation in Verrou:
+    // Locked, a protected item awaiting its confirmation in Verrou, or a
+    // login without a seed (its code comes from a text or another app):
     // the pill's choice covers it.
-    if (!credentials?.ok) {
+    if (!credentials?.ok || !credentials.totp) {
       if (!pill.open && anchor.isConnected) offer(anchor, "otp");
       return;
     }
@@ -1466,7 +1467,12 @@
     pill.hide();
   }
 
-  document.addEventListener("submit", (event) => { submittedLoginFrom(event.target); captureFrom(event.target); }, true);
+  document.addEventListener("submit", (event) => {
+    // A page can dispatch its own submit events: the two-step window is
+    // armed by a real sign-in only (the capture keeps its own rules).
+    if (event.isTrusted) submittedLoginFrom(event.target);
+    captureFrom(event.target);
+  }, true);
 
   document.addEventListener("click", (event) => {
     if (!event.isTrusted) return;

@@ -603,7 +603,10 @@ async function handle(message, sender) {
       if (!tab?.url) return { ok: false, state: "error" };
       const credentials = await fill(tab.url, message.item);
       if (!credentials.ok) return credentials;
-      const value = credentials[message.what] ?? null;
+      // Only these fields can leave: the message names one, a page cannot
+      // reach for anything else.
+      const what = ["username", "password", "totp"].includes(message.what) ? message.what : null;
+      const value = what ? credentials[what] : null;
       return value === null ? { ok: false, state: "error" } : { ok: true, value };
     }
     case "setTotpTab": {

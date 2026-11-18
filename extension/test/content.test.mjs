@@ -772,6 +772,24 @@ test("two-step sign-in across pages: the background answers for the tab, once", 
   assert.ok(background.sent("recentLogin").length >= 1, "asked the background");
 });
 
+test("two-step sign-in of a login without a seed: nothing fills, the pill stays", async () => {
+  const otpForm = (h) => h("form", {}, h("input", { id: "otp", autocomplete: "one-time-code", maxLength: 6 }), h("button", { type: "submit" }, "Valider"));
+  const background = fakeBackground({ items: [LOGINS[0], LOGINS[1]] });
+  const page = openPage(loginForm, background, { settings: { autoSubmit: false } });
+  await eventually(() => page.pillText().includes("Sign in"), "the pill");
+  page.press("Sign in");
+  await eventually(() => page.byId("password").value === "mot-de-passe-camille", "the login without a seed is filled");
+  page.fire(buttonById(page, "submit"), "click");
+  await eventually(() => background.sent("loginSubmitted").length === 1, "the submission is remembered");
+  page.document.body.replaceChildren(otpForm(page.h));
+  page.mutate();
+  // The code comes from a text or another app: the logins with a seed stay
+  // the way in, nothing is typed by itself.
+  await eventually(() => page.pillText().includes("Fill the code"), "the code pill comes back");
+  await sleep(100);
+  assert.equal(page.byId("otp").value, "", "no code invented");
+});
+
 // MARK: Saving
 
 test("the save banner in the same corner as the pill", async () => {

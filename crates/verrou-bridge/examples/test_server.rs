@@ -279,6 +279,20 @@ fn main() {
             sso.url_matches = vec![Some(verrou_core::UriMatch::StartsWith)];
             sso
         },
+        // "Master password re-prompt": its passkey needs the confirmation.
+        // Its own registrable domain: `banque.exemple.fr` above must stay
+        // the only suggestion there.
+        {
+            let mut protected = login(
+                "protege",
+                "Site protégé",
+                "https://protege.example",
+                "camille",
+                "protege-secret",
+            );
+            protected.reprompt = true;
+            protected
+        },
         ssh_key(),
         card(),
         identity(),

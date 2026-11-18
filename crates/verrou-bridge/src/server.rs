@@ -113,8 +113,12 @@ pub trait Backend: Send + Sync + 'static {
     /// `then`: what it will read once unlocked, cleaned. Resolved once the
     /// user unlocked (`true`) or gave up (`false`): the reply to the client
     /// waits for it.
-    fn request_unlock(&self, kind: ClientKind, reason: &str, then: Option<&UnlockIntent>)
-    -> BoxFuture<'_, bool>;
+    fn request_unlock(
+        &self,
+        kind: ClientKind,
+        reason: &str,
+        then: Option<&UnlockIntent>,
+    ) -> BoxFuture<'_, bool>;
     /// Pairing request: show `code` and ask for approval, then
     /// answer with [`Bridge::answer_pairing`].
     fn pairing_requested(&self, request: PairingRequest);
@@ -1153,15 +1157,18 @@ async fn passkey(shared: &Shared, client: &ClientInfo, command: Command) -> Repl
             if !within_limits(shared, client, &item, &title).await {
                 return refused();
             }
-            match read(backend, |v| v.get(&item).is_some_and(|i| backend.gate(i))) {
+            // A protected item keeps one confirmation: the app asks for the
+            // item's own protection ([`Backend::confirm`]), and the approval
+            // opens the gate for the retries. `gate` is not asked here: its
+            // refusal fires a prompt of its own, on top of this one.
+            match read(backend, |v| access::needs_confirmation(v, &item)) {
                 None => return ReplyResult::Locked,
-                Some(false) => {
-                    // The confirmation also covers a protected item.
+                Some(true) => {
                     if !approved(shared, client, Purpose::Passkey, &item, &title).await {
                         return refused();
                     }
                 }
-                Some(true) => {}
+                Some(false) => {}
             }
             let uv = request.uv;
             let slot = Arc::new(Mutex::new(None));
@@ -1189,14 +1196,15 @@ async fn passkey(shared: &Shared, client: &ClientInfo, command: Command) -> Repl
             if !within_limits(shared, client, &key, &title).await {
                 return refused();
             }
-            match read(backend, |v| v.get(&key).is_some_and(|i| backend.gate(i))) {
+            // Same protection as a use, above: one confirmation.
+            match read(backend, |v| access::needs_confirmation(v, &key)) {
                 None => return ReplyResult::Locked,
-                Some(false) => {
+                Some(true) => {
                     if !approved(shared, client, Purpose::Passkey, &key, &title).await {
                         return refused();
                     }
                 }
-                Some(true) => {}
+                Some(false) => {}
             }
             let uv = request.uv;
             let now = now_ms() / 1000;

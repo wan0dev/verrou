@@ -3,7 +3,7 @@
 
 use std::io::{Read as _, Write as _};
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -36,6 +36,8 @@ struct FakeBackend {
     confirmations: Mutex<Vec<Confirmation>>,
     /// The vault locks while the user answers (screen locked meanwhile).
     lock_while_confirming: AtomicBool,
+    /// How many times `gate` was asked (the passkey road must not take it).
+    gate_calls: AtomicUsize,
     /// What the backend answers to `approval_scope`, for any purpose.
     scope: Mutex<ApprovalScope>,
     alias: Mutex<AliasSettings>,
@@ -136,6 +138,13 @@ impl Backend for FakeBackend {
 
     fn approval_scope(&self, _purpose: Purpose, _item: &str) -> ApprovalScope {
         *self.scope.lock().unwrap()
+    }
+
+    /// The default answer, counted: the passkey commands must not ask for
+    /// the gate (their confirmation covers a protected item on its own).
+    fn gate(&self, item: &verrou_core::Item) -> bool {
+        self.gate_calls.fetch_add(1, Ordering::SeqCst);
+        !item.reprompt
     }
 
     fn alias_settings(&self) -> AliasSettings {
@@ -306,6 +315,7 @@ fn start_with(
         approve: AtomicBool::new(false),
         confirmations: Mutex::new(Vec::new()),
         lock_while_confirming: AtomicBool::new(false),
+        gate_calls: AtomicUsize::new(0),
         scope: Mutex::new(ApprovalScope::FiveMinutes),
         alias: Mutex::new(AliasSettings::default()),
     });
@@ -511,7 +521,10 @@ fn pairing_then_fill_for_the_matching_site_only() {
     // A refused unlock is told apart from a vault still locked: the reply
     // comes with the outcome, not at once.
     backend.unlock_refused.store(true, Ordering::SeqCst);
-    assert_eq!(client.request(&json!({ "cmd": "unlock" }))["result"], "denied");
+    assert_eq!(
+        client.request(&json!({ "cmd": "unlock" }))["result"],
+        "denied"
+    );
     backend.unlock_refused.store(false, Ordering::SeqCst);
     let save_locked = client.request(&json!({ "cmd": "save", "url": "https://github.com/",
         "username": "camille", "password": "x" }));
@@ -950,6 +963,54 @@ fn forms_and_site_linking(client: &mut Client, backend: &FakeBackend) {
         &json!({ "cmd": "link_site", "url": "https://github.example/", "item": "github" }),
     );
     assert_eq!(again["result"], "denied");
+}
+
+/// A protected login's passkey: one confirmation covers the creation and
+/// the sign-in that follows, whatever the site's user-verification flag
+/// says. `gate` is never asked on this road: its refusal would fire a
+/// prompt of its own, on top of the confirmation.
+#[test]
+fn protected_passkey_confirms_once() {
+    let (bridge, backend, pairings, file) = start();
+    let mut browser = paired(&bridge, &pairings, "browser");
+    backend.approve.store(true, Ordering::SeqCst);
+
+    // The passkey lands on the protected login ("banque").
+    let challenge = data_encoding::BASE64URL.encode(&[0xaa; 32]);
+    let created = browser.request(&json!({
+        "cmd": "passkey_create", "url": "https://banque.fr/compte", "rp_id": "banque.fr",
+        "rp_name": "Banque", "user_id": "AQID", "user_name": "camille",
+        "challenge": challenge, "algorithms": [-7], "exclude": [], "uv": false,
+        "attestation": "none", "item": "banque"
+    }));
+    assert_eq!(created["result"], "registration", "{created}");
+
+    // A sign-in with it: the approval just given still holds.
+    let used = browser.request(&json!({
+        "cmd": "passkey_get", "url": "https://banque.fr/connexion", "rp_id": "banque.fr",
+        "item": "banque", "credential": created["credential"], "challenge": challenge,
+        "uv": false
+    }));
+    assert_eq!(used["result"], "assertion", "{used}");
+
+    let asked: Vec<_> = backend
+        .confirmations
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|c| (c.purpose, c.title.clone()))
+        .collect();
+    assert_eq!(
+        asked,
+        [(Purpose::Passkey, "Banque".to_owned())],
+        "one confirmation for both uses"
+    );
+    assert_eq!(
+        backend.gate_calls.load(Ordering::SeqCst),
+        0,
+        "the confirmation replaces the gate"
+    );
+    let _ = std::fs::remove_file(file);
 }
 
 /// A stolen pairing key asserts whatever address it wants: beyond
