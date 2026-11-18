@@ -1122,10 +1122,11 @@ async fn forms(shared: &Shared, client: &ClientInfo, command: Command) -> ReplyR
 
 // MARK: Passkeys
 
-/// The page's passkeys ([`crate::passkeys`]). User verification
-/// requested by the site goes through Verrou's approval (Touch
-/// ID); otherwise, a protected item awaits its confirmation, as when
-/// filling.
+/// The page's passkeys ([`crate::passkeys`]). The unlocked vault is the
+/// user's verification (the biometrics that opened it): like Bitwarden and
+/// 1Password, a passkey does not ask for Touch ID at every use. The bulk
+/// limit stays, and a protected item keeps its confirmation, which opens
+/// the gate for the retries.
 async fn passkey(shared: &Shared, client: &ClientInfo, command: Command) -> ReplyResult {
     let backend = &*shared.backend;
     let denied = |reason: String| ReplyResult::Denied { reason };
@@ -1149,21 +1150,18 @@ async fn passkey(shared: &Shared, client: &ClientInfo, command: Command) -> Repl
                 Some(Err(reason)) => return denied(reason),
                 Some(Ok(found)) => found,
             };
-            if request.uv {
-                // Verrou's approval also covers a protected item.
-                if !approved(shared, client, Purpose::Passkey, &item, &title).await {
-                    return refused();
+            if !within_limits(shared, client, &item, &title).await {
+                return refused();
+            }
+            match read(backend, |v| v.get(&item).is_some_and(|i| backend.gate(i))) {
+                None => return ReplyResult::Locked,
+                Some(false) => {
+                    // The confirmation also covers a protected item.
+                    if !approved(shared, client, Purpose::Passkey, &item, &title).await {
+                        return refused();
+                    }
                 }
-                released(shared, client, &item);
-            } else {
-                if !within_limits(shared, client, &item, &title).await {
-                    return refused();
-                }
-                match read(backend, |v| v.get(&item).is_some_and(|i| backend.gate(i))) {
-                    None => return ReplyResult::Locked,
-                    Some(false) => return ReplyResult::Confirm,
-                    Some(true) => {}
-                }
+                Some(true) => {}
             }
             let uv = request.uv;
             let slot = Arc::new(Mutex::new(None));
@@ -1188,8 +1186,17 @@ async fn passkey(shared: &Shared, client: &ClientInfo, command: Command) -> Repl
                 Some(Err(reason)) => return denied(reason),
                 Some(Ok(found)) => found,
             };
-            if request.uv && !approved(shared, client, Purpose::Passkey, &key, &title).await {
+            if !within_limits(shared, client, &key, &title).await {
                 return refused();
+            }
+            match read(backend, |v| v.get(&key).is_some_and(|i| backend.gate(i))) {
+                None => return ReplyResult::Locked,
+                Some(false) => {
+                    if !approved(shared, client, Purpose::Passkey, &key, &title).await {
+                        return refused();
+                    }
+                }
+                Some(true) => {}
             }
             let uv = request.uv;
             let now = now_ms() / 1000;

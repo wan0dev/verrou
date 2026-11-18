@@ -233,7 +233,8 @@ test("creation, then sign-ins signed by Verrou", async () => {
   assert.equal(created.result, "registration", JSON.stringify(created));
   assert.equal(created.item, "github");
   await new Promise((resolve) => setTimeout(resolve, 200));
-  assert.ok(events.includes("CONFIRM passkey GitHub"), "user verification asked of Verrou");
+  assert.ok(!events.includes("CONFIRM passkey GitHub"),
+    "the unlocked vault is the user's verification: no Touch ID asked of Verrou");
   const clientData = JSON.parse(Buffer.from(codec.decode(created.client_data)).toString());
   assert.deepEqual(clientData, { type: "webauthn.create", challenge, origin: "https://github.com", crossOrigin: false });
   // "none" attestation, and nothing of the private key.
