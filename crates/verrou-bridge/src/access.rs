@@ -237,6 +237,7 @@ pub fn page_allowed(page_url: &str) -> bool {
     }
 }
 
+#[allow(clippy::implicit_hasher)]
 pub fn suggestions(vault: &Vault, page_url: &str, last_used: &HashMap<String, i64>) -> Vec<Suggestion> {
     if !page_allowed(page_url) {
         return Vec::new();
