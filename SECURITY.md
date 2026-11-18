@@ -249,6 +249,15 @@ extension ──Native Messaging──▶ verrou-native-host ──TCP 127.0.0.1
   site added to a login always ask for it. The extension's identifier is not
   a proof (the manifest's public key sets this identifier for whoever copies
   it): only pairing is.
+- **One-time codes and copies**: the code the extension fills or copies is
+  generated at the moment of the ask, for a login that matches the page's
+  site like a password. After a filled sign-in is submitted, the page that
+  asks only for the code gets it filled by itself within 30 seconds (same
+  tab, same site, read once; the form is submitted only if the auto-submit
+  setting is on); the pill's choice covers everything else. The popup can
+  copy the username, the password or the current code of the page's logins:
+  a copy follows the fill's rules (matching site, confirmation of a
+  protected item) and counts as a use for the suggestion list.
 - **What the extension writes**: after a form is submitted, the username
   and password entered wait for the user's answer for two minutes at most,
   in `chrome.storage.session` (in memory, out of the pages' reach). Nothing
@@ -667,11 +676,13 @@ page ──postMessage──▶ passkeys.js ──▶ background ──encrypted
   "Backup eligible" and "backed up" flags: the passkey is synced by the
   vault.
 - **User verification**: if the site asks for it (`required` or
-  `preferred`, the default), Verrou asks for Touch ID (or the session
-  password) before signing or creating, and only then sets the UV flag; the
-  approval lasts 5 minutes for this extension and this item. Otherwise, the
-  click in Verrou's window counts as presence. A protected item ("master
-  password re-prompt") waits for its confirmation, as when filling.
+  `preferred`, the default), the **unlocked vault is the user's
+  verification** — the biometrics that opened it, as in Bitwarden and
+  1Password — and the UV flag cites it: no Touch ID at each use, and
+  locking Verrou is what withdraws the grant. Otherwise, the click in
+  Verrou's window counts as presence. A protected item ("master password
+  re-prompt") waits for its confirmation (Touch ID or the master password),
+  as when filling.
 - **Counter**: incremented on each signature and saved on the server
   before the response leaves; offline, the passkey doesn't sign. Only
   exception: an item shared read-only, whose counter stays the server's.
@@ -679,9 +690,10 @@ page ──postMessage──▶ passkeys.js ──▶ background ──encrypted
   already has one replaces it (the window says so). A passkey the site
   excludes (`excludeCredentials`) and that the vault already contains is not
   created again (`InvalidStateError`).
-- **PRF extension** (`extensions.prf`): evaluated by Verrou after Touch ID
-  (a request with `prf` requires user verification), outputs returned by
-  `getClientExtensionResults()`; see "Passkey PRF extension".
+- **PRF extension** (`extensions.prf`): evaluated by Verrou with the same
+  user verification as the signature (a request with `prf` requires it),
+  outputs returned by `getClientExtensionResults()`; see "Passkey PRF
+  extension".
 - **Known limits**: ES256 keys only (a site that doesn't accept ES256 goes
   through the browser); no other WebAuthn extension (`largeBlob`); no
   passkey in frames; during a Touch ID request, the extension's other
@@ -721,6 +733,9 @@ page ──postMessage──▶ passkeys.js ──▶ background ──encrypted
   shown. An item's identifier is the server's: someone who reads this file
   and has access to the server can link the two, they then learn when an
   item was used, not what it contains.
+- The extension's suggestion list for a page follows this record: within a
+  match precision, the most recently used login comes first, then the
+  favorites, then the title.
 - It is erased with the account files on sign-out; the chosen sort and the
   list opened on unlock are app preferences on the device.
 
@@ -924,8 +939,11 @@ ssh ──Unix socket──▶ verrou ssh-agent ──TCP 127.0.0.1──▶ Ver
   approval, so "until Verrou locks" ends with it, and so does revoking the
   terminal; changing a key's scope forgets that key's approvals at once.
   Only the `ssh` and git signing purposes can use the two other scopes: the
-  bridge forces 5 minutes for a secret, a card, a passkey or a site link,
-  whatever the app answers (a test checks it). A protected key ("master
+  bridge forces 5 minutes for a secret, a card or a site link,
+  whatever the app answers (a test checks it). A passkey asks for no
+  approval while the vault is unlocked (the biometrics that opened it stand
+  for the user's verification); a protected item keeps its confirmation, 5
+  minutes too. A protected key ("master
   password re-prompt") never gets "until Verrou locks": the Rust core
   clamps it to 5 minutes, and the Mac hides the setting for it. The approval
   prompt (on the Mac and on a paired iPhone) says "until Verrou locks" when
