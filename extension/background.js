@@ -476,8 +476,24 @@ const originOf = (url) => {
 const fromPage = new Set([
   "suggest", "fill", "unlock", "forms", "fillForm", "openLinkSite", "alias",
   "capture", "rememberUsername", "pendingSave", "confirmSave", "dismissSave", "neverSave",
+  "loginSubmitted", "recentLogin",
   "passkeyList", "passkeyGet", "passkeyTargets", "passkeyCreate",
 ]);
+
+// MARK: Two-step sign-in
+
+// A sign-in the extension filled was submitted: the page that follows, when
+// it asks only for the one-time code, gets it filled by itself. Remembered
+// per tab and per site, for a short window, and read once.
+const RECENT_LOGIN_MS = 30_000;
+const recentKey = (tabId) => `recentLogin:${tabId}`;
+const hostOf = (url) => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+};
 
 async function activeTab() {
   const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
@@ -530,6 +546,27 @@ async function handle(message, sender) {
     case "neverSave":
       await neverSave(sender);
       return { ok: true };
+    case "loginSubmitted":
+      if (sender.tab?.id !== undefined && sender.frameId === 0) {
+        const host = hostOf(sender.url);
+        if (host) {
+          await ext.storage.session.set(
+            { [recentKey(sender.tab.id)]: { item: String(message.item), host, at: Date.now() } },
+          );
+        }
+      }
+      return { ok: true };
+    case "recentLogin": {
+      if (sender.tab?.id === undefined || sender.frameId !== 0) return { ok: false };
+      const host = hostOf(sender.url);
+      if (!host) return { ok: false };
+      const stored = (await ext.storage.session.get(recentKey(sender.tab.id)))[recentKey(sender.tab.id)];
+      if (!stored || stored.host !== host || Date.now() - stored.at > RECENT_LOGIN_MS) {
+        return { ok: false };
+      }
+      await ext.storage.session.remove(recentKey(sender.tab.id));
+      return { ok: true, item: stored.item };
+    }
     case "passkeyList":
     case "passkeyGet":
     case "passkeyTargets":
@@ -556,7 +593,7 @@ async function handle(message, sender) {
       if (!tab?.url) return { ok: false };
       const credentials = await fill(tab.url, message.item);
       if (!credentials.ok) return credentials;
-      await ext.tabs.sendMessage(tab.id, { kind: "apply", credentials, origin: originOf(tab.url) }, { frameId: 0 });
+      await ext.tabs.sendMessage(tab.id, { kind: "apply", credentials, origin: originOf(tab.url), item: message.item }, { frameId: 0 });
       return { ok: true };
     }
     case "copyTab": {
@@ -606,7 +643,7 @@ async function handle(message, sender) {
       }
       const credentials = await fill(target.url, message.item);
       if (credentials.ok) {
-        await ext.tabs.sendMessage(target.tabId, { kind: "apply", credentials, origin: originOf(target.url) },
+        await ext.tabs.sendMessage(target.tabId, { kind: "apply", credentials, origin: originOf(target.url), item: message.item },
           { frameId: target.frameId }).catch(() => {});
       }
       return { ok: true };

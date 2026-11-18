@@ -54,6 +54,12 @@ export function fakeBackground({ state = "unlocked", items = LOGINS, cards = [],
         case "unlock":
           // The real background waits for the vault to open before answering.
           return { ok: true };
+        case "loginSubmitted":
+          background.submitted = message;
+          return { ok: true };
+        case "recentLogin":
+          // The real background remembers the tab's last submitted sign-in.
+          return background.submitted ? { ok: true, item: background.submitted.item } : { ok: false };
         case "pendingSave":
           return {};
         case "alias":

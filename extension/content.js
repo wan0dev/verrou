@@ -364,14 +364,14 @@
   }
 
   // What Verrou just filled: submitted as is, the form has nothing new to
-  // offer to save.
-  let lastFill = { username: null, password: null, at: 0 };
+  // offer to save. `item` backs the two-step fill of the code page.
+  let lastFill = { username: null, password: null, item: null, at: 0 };
 
   // Fills the form of `anchor` (or the page) with `credentials`, then puts
   // the cursor on the submit button. With `autoSubmit` (explicit choice of
   // the user: pill or extension's popup) and the setting on, the form is
   // submitted if nothing is left to type.
-  function apply(credentials, anchor, { autoSubmit = false } = {}) {
+  function apply(credentials, anchor, { autoSubmit = false, item = null } = {}) {
     let scope;
     let button;
     const filled = [];
@@ -400,7 +400,7 @@
         // Form without <form>: the one of the filled field.
         if (scope === document && last) scope = scopeOf(last);
       }
-      lastFill = { username: credentials.username ?? null, password: credentials.password ?? null, at: Date.now() };
+      lastFill = { username: credentials.username ?? null, password: credentials.password ?? null, item, at: Date.now() };
       button = submitButtonOf(scope, last);
       (button ?? last)?.focus({ preventScroll: true });
     });
@@ -939,7 +939,7 @@
     const target = fillTarget(kind, anchor);
     pill.hide();
     // Explicit choice in the pill (real click): the form can be submitted.
-    if (credentials?.ok) apply(credentials, target, { autoSubmit: true });
+    if (credentials?.ok) apply(credentials, target, { autoSubmit: true, item: item.id });
   }
 
   async function fillCardOrIdentity(item, kind, anchor) {
@@ -1246,6 +1246,9 @@
     const { anchor, kind, signature } = loginFields();
     if (!anchor || queried.has(signature) || pill.busy) return;
     queried.add(signature);
+    // A page that asks only for the one-time code of a sign-in Verrou just
+    // filled: the code goes in by itself, the pill stays the fallback.
+    if (kind === "otp" && twoStepCode(anchor)) return;
     offer(anchor, kind);
   }
 
@@ -1411,7 +1414,59 @@
     capture(scope);
   }
 
-  document.addEventListener("submit", (event) => captureFrom(event.target), true);
+  // MARK: Two-step sign-in
+
+  // A sign-in form Verrou just filled was submitted: the page that follows,
+  // when it asks only for the one-time code, gets the code filled by itself
+  // (generated at the moment of the fill). The window is short, and the
+  // main frame only; out of it, or for anything the fill refuses (locked,
+  // protected item), the pill stays the way in.
+  const TWO_STEP_MS = 30_000;
+  let submittedLogin = { item: null, at: 0 };
+
+  function submittedLoginFrom(target) {
+    if (!(target instanceof Element)) return;
+    const scope = target.closest("form") ?? document;
+    if (!scope.querySelector("input[type=password]")) return;
+    if (!lastFill.item || Date.now() - lastFill.at > TWO_STEP_MS) return;
+    submittedLogin = { item: lastFill.item, at: Date.now() };
+    send({ kind: "loginSubmitted", item: lastFill.item });
+  }
+
+  // Fills the code field of a sign-in just submitted. Returns `true` when
+  // the two-step fill took over (the pill comes back only if the fill
+  // cannot happen).
+  function twoStepCode(anchor) {
+    if (window !== top) return false;
+    if (submittedLogin.item && Date.now() - submittedLogin.at < TWO_STEP_MS) {
+      fillCode(submittedLogin.item, anchor);
+      return true;
+    }
+    // The sign-in was submitted on the previous page: the background
+    // remembers it for this tab, for a short while.
+    send({ kind: "recentLogin" })
+      .then((reply) => {
+        if (reply?.ok && anchor.isConnected) fillCode(reply.item, anchor);
+        else if (!pill.open && anchor.isConnected) offer(anchor, "otp");
+      })
+      .catch(() => {});
+    return true;
+  }
+
+  async function fillCode(item, anchor) {
+    const credentials = await send({ kind: "fill", item });
+    // Locked, or a protected item awaiting its confirmation in Verrou:
+    // the pill's choice covers it.
+    if (!credentials?.ok) {
+      if (!pill.open && anchor.isConnected) offer(anchor, "otp");
+      return;
+    }
+    submittedLogin = { item: null, at: 0 };
+    apply(credentials, anchor, { autoSubmit: true, item });
+    pill.hide();
+  }
+
+  document.addEventListener("submit", (event) => { submittedLoginFrom(event.target); captureFrom(event.target); }, true);
 
   document.addEventListener("click", (event) => {
     if (!event.isTrusted) return;
@@ -1419,7 +1474,7 @@
     const button = target instanceof Element
       ? target.closest("button, input[type=submit], input[type=button], [role=button]")
       : null;
-    if (button) captureFrom(button);
+    if (button) { submittedLoginFrom(button); captureFrom(button); }
   }, true);
 
 
@@ -1608,6 +1663,7 @@
     }
     // Keyboard submit: some forms are submitted without "submit".
     if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+      submittedLoginFrom(event.target);
       captureFrom(event.target);
     }
   }, true);
@@ -1622,7 +1678,7 @@
       const active = document.activeElement;
       // Choice made in the extension's popup: the form can be submitted.
       apply(message.credentials, active instanceof HTMLInputElement && classify(active) ? active : null,
-        { autoSubmit: true });
+        { autoSubmit: true, item: message.item });
       pill.hide();
     }
     // Form submitted without changing page (single-page application).

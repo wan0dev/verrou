@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { eventually, fakeBackground, openPage, sleep, source } from "./page.mjs";
+import { LOGINS, eventually, fakeBackground, openPage, sleep, source } from "./page.mjs";
 
 const loginForm = (h) => h("form", { id: "login", action: "/connexion" },
   h("input", { id: "email", type: "email", name: "email", autocomplete: "username" }),
@@ -745,6 +745,31 @@ test("verification code: the pill offers the code, not when Verrou is locked", a
   await eventually(() => locked.sent("suggest").length === 1, "search");
   await sleep(30);
   assert.equal(quiet.pillNode(), null);
+});
+
+test("two-step sign-in: once the filled sign-in is submitted, the code page fills itself", async () => {
+  const otpForm = (h) => h("form", {}, h("input", { id: "otp", autocomplete: "one-time-code", maxLength: 6 }), h("button", { type: "submit" }, "Valider"));
+  const background = fakeBackground({ items: [LOGINS[1]] });
+  const page = openPage(loginForm, background, { settings: { autoSubmit: false } });
+  await eventually(() => page.pillText().includes("Sign in"), "the pill");
+  page.press("Sign in");
+  await eventually(() => page.byId("password").value === "mot-de-passe-dominique", "login filled");
+  page.fire(buttonById(page, "submit"), "click");
+  await eventually(() => background.sent("loginSubmitted").length === 1, "the submission is remembered");
+  // Same page (single-page app): the sign-in form gives way to the code.
+  page.document.body.replaceChildren(otpForm(page.h));
+  page.mutate();
+  await eventually(() => page.byId("otp")?.value === "123456", "code filled by itself");
+  assert.equal(background.sent("recentLogin").length, 0, "in the same page, nothing to ask");
+});
+
+test("two-step sign-in across pages: the background answers for the tab, once", async () => {
+  const otpForm = (h) => h("form", {}, h("input", { id: "otp", autocomplete: "one-time-code", maxLength: 6 }), h("button", { type: "submit" }, "Valider"));
+  const background = fakeBackground({ items: [LOGINS[1]] });
+  background.submitted = { kind: "loginSubmitted", item: "dominique" };
+  const page = openPage(otpForm, background, { settings: { autoSubmit: false } });
+  await eventually(() => page.byId("otp").value === "123456", "code filled by itself");
+  assert.ok(background.sent("recentLogin").length >= 1, "asked the background");
 });
 
 // MARK: Saving
