@@ -322,6 +322,18 @@
   "popupUnlocked": {
     "message": "Entsperrt"
   },
+  "popupCopyUsername": {
+    "message": "Benutzername kopieren"
+  },
+  "popupCopyPassword": {
+    "message": "Passwort kopieren"
+  },
+  "popupCopyCode": {
+    "message": "Einmalcode kopieren"
+  },
+  "popupCopied": {
+    "message": "Kopiert"
+  },
   "popupScanQr": {
     "message": "Angezeigten QR-Code hinzufügen"
   },

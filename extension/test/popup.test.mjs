@@ -154,3 +154,32 @@ test("the site's logins are buttons: keyboard and screen reader reach them", asy
   await eventually(() => popup.closed(), "popup closed after the fill");
   assert.deepEqual(popup.sent("fillTab").map((m) => m.item), ["dominique"]);
 });
+
+test("each login copies its username, its password and, with a seed, the code", async () => {
+  const copied = [];
+  const popup = openPopup((message) => {
+    if (message.kind === "suggestTab") return { state: "unlocked", items: LOGINS };
+    if (message.kind === "copyTab") {
+      assert.ok(["username", "password", "totp"].includes(message.what), "a field we know");
+      return { ok: true, value: `${message.what}-value` };
+    }
+    return {};
+  });
+  await eventually(() => popup.main.textContent.includes("MAIF pro"), "logins");
+  popup.context.navigator = { clipboard: { writeText: async (text) => copied.push(text) } };
+  const copy = (label) => {
+    const button = popup.buttons().find((n) => n.title === label);
+    assert.ok(button, `copy button "${label}"`);
+    popup.fire(button, "click");
+  };
+  copy("Copy the username");
+  copy("Copy the password");
+  copy("Copy the one-time code");
+  await eventually(() => copied.length === 3, "three fields copied");
+  assert.deepEqual(copied, ["username-value", "password-value", "totp-value"]);
+  assert.equal(popup.state.textContent, "Copied");
+  // Only "MAIF pro" has a seed: two copy buttons on its own row, three on it.
+  const of = (label) => popup.buttons().filter((n) => n.title === label).length;
+  assert.equal(of("Copy the one-time code"), 1, "one row has a code button");
+  assert.equal(popup.buttons().filter((n) => n.className === "copy").length, 5, "2 + 3 copy buttons");
+});

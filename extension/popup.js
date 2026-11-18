@@ -38,14 +38,19 @@ function show(...nodes) {
   main.replaceChildren(...nodes);
 }
 
-function row(title, subtitle, lead, action) {
+function row(title, subtitle, lead, action, copies = []) {
   const button = element("button", { type: "button", className: "row" },
     lead,
     element("div", { className: "text" },
       element("div", { className: "title", textContent: title }),
       element("div", { className: "sub", textContent: subtitle ?? "" })));
   button.addEventListener("click", action);
-  return element("li", {}, button);
+  const li = element("li", {}, button);
+  if (copies.length) {
+    li.className = "entry";
+    li.append(element("div", { className: "copies" }, ...copies));
+  }
+  return li;
 }
 
 const badge = (title) => element("div", { className: "badge", textContent: (title.trim()[0] ?? "?").toUpperCase() });
@@ -99,7 +104,7 @@ async function renderUnlocked() {
       }
       if (result?.ok) window.close();
       else stateLabel.textContent = t("popupUnlocked");
-    }));
+    }, copyButtons(item)));
   }
   const other = element("button", { className: "link", textContent: t("otherLogin") });
   other.addEventListener("click", () => renderOtherLogin());
@@ -117,6 +122,38 @@ async function renderUnlocked() {
     await autoSubmitSetting(),
     unpairLink(),
   );
+}
+
+// MARK: Copy
+
+// When the fill does not work on a page (an exotic framework, a hostile
+// frame), the login can still be pasted: each button copies one field, the
+// one-time code generated at the moment of the click. The item must match
+// the tab's site, as for a fill.
+function copyButtons(item) {
+  const copy = (what, label, icon) => {
+    const button = element("button", { type: "button", className: "copy",
+      title: label, ariaLabel: label, textContent: icon });
+    button.addEventListener("click", async () => {
+      let result = await send({ kind: "copyTab", item: item.id, what });
+      // Protected item: confirmation in Verrou, then a new attempt.
+      for (let tries = 0; result?.state === "confirm" && tries < 60; tries += 1) {
+        stateLabel.textContent = t("confirmInVerrouWait");
+        await sleep(1000);
+        result = await send({ kind: "copyTab", item: item.id, what });
+      }
+      if (result?.ok) {
+        await navigator.clipboard.writeText(result.value);
+        stateLabel.textContent = t("popupCopied");
+      } else stateLabel.textContent = t("popupUnlocked");
+    });
+    return button;
+  };
+  return [
+    copy("username", t("popupCopyUsername"), "👤"),
+    copy("password", t("popupCopyPassword"), "🔑"),
+    ...(item.has_totp ? [copy("totp", t("popupCopyCode"), "⏱")] : []),
+  ];
 }
 
 // MARK: Settings

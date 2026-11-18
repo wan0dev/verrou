@@ -322,6 +322,18 @@
   "popupUnlocked": {
     "message": "Déverrouillé"
   },
+  "popupCopyUsername": {
+    "message": "Copier le nom d'utilisateur"
+  },
+  "popupCopyPassword": {
+    "message": "Copier le mot de passe"
+  },
+  "popupCopyCode": {
+    "message": "Copier le code à usage unique"
+  },
+  "popupCopied": {
+    "message": "Copié"
+  },
   "popupScanQr": {
     "message": "Ajouter le QR code affiché"
   },

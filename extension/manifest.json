@@ -12,7 +12,7 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-  "permissions": ["nativeMessaging", "storage", "activeTab", "alarms"],
+  "permissions": ["nativeMessaging", "storage", "activeTab", "alarms", "clipboardWrite"],
   "background": { "service_worker": "background.js", "type": "module" },
   "action": {
     "default_title": "Verrou",

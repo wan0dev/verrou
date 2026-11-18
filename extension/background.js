@@ -559,6 +559,16 @@ async function handle(message, sender) {
       await ext.tabs.sendMessage(tab.id, { kind: "apply", credentials, origin: originOf(tab.url) }, { frameId: 0 });
       return { ok: true };
     }
+    case "copyTab": {
+      // The popup copies instead of filling (a page the fill does not work
+      // on): the same rule as a fill, the item must match the tab's site.
+      const tab = await activeTab();
+      if (!tab?.url) return { ok: false, state: "error" };
+      const credentials = await fill(tab.url, message.item);
+      if (!credentials.ok) return credentials;
+      const value = credentials[message.what] ?? null;
+      return value === null ? { ok: false, state: "error" } : { ok: true, value };
+    }
     case "setTotpTab": {
       const tab = await activeTab();
       if (!tab?.url) return { ok: false, reason: t("noTab") };
