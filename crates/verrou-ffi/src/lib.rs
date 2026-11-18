@@ -2533,8 +2533,9 @@ impl Backend for SessionBackend {
 
     fn suggestions(&self, page_url: &str) -> Option<Vec<Suggestion>> {
         let session = self.session.upgrade()?;
+        let last_used = session.last_used_map();
         session
-            .with_vault(|v| Ok(verrou_bridge::access::suggestions(v, page_url)))
+            .with_vault(|v| Ok(verrou_bridge::access::suggestions(v, page_url, &last_used)))
             .ok()
     }
 

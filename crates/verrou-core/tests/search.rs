@@ -2,6 +2,7 @@
 
 #![allow(clippy::assert_is_empty)]
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use verrou_core::mock::{self, MockLanguage};
@@ -135,6 +136,38 @@ fn site_suggestions() {
         v.suggestions_for("https://github-login.evil.example")
             .is_empty()
     );
+}
+
+#[test]
+fn suggestions_follow_last_use() {
+    let v = vault();
+    let url = "https://github.com/login";
+    // Without a last-used log: the alphabetical order, as before.
+    assert_eq!(
+        v.suggestions_with_usage(url, &HashMap::new())[0].title,
+        "GitHub"
+    );
+    // A login used on this device comes first, most recent first; the
+    // never-used ones keep their previous order.
+    let id_of = |title: &str| {
+        v.items()
+            .iter()
+            .find(|i| i.title == title)
+            .unwrap()
+            .id
+            .clone()
+    };
+    let last_used = HashMap::from([
+        (id_of("GitHub — work account"), 20),
+        (id_of("GitHub"), 10),
+    ]);
+    let used: Vec<_> = v
+        .suggestions_with_usage(url, &last_used)
+        .iter()
+        .map(|i| i.title.clone())
+        .collect();
+    assert_eq!(used[0], "GitHub — work account");
+    assert_eq!(used[1], "GitHub");
 }
 
 #[test]

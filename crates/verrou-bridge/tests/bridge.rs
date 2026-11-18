@@ -47,8 +47,13 @@ impl Backend for FakeBackend {
     }
 
     fn suggestions(&self, page_url: &str) -> Option<Vec<Suggestion>> {
-        self.is_unlocked()
-            .then(|| access::suggestions(&self.vault.lock().unwrap(), page_url))
+        self.is_unlocked().then(|| {
+            access::suggestions(
+                &self.vault.lock().unwrap(),
+                page_url,
+                &std::collections::HashMap::new(),
+            )
+        })
     }
 
     fn credentials(&self, item: &str, page_url: &str) -> Option<Result<Credentials, String>> {

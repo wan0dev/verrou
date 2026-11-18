@@ -20,6 +20,8 @@
 //! the user's approval in Verrou ([`field_needs_confirmation`]), kept
 //! a few minutes for this item and this client only.
 
+use std::collections::HashMap;
+
 use url::Url;
 use verrou_core::matching::host_of;
 use verrou_core::totp::Totp;
@@ -235,12 +237,12 @@ pub fn page_allowed(page_url: &str) -> bool {
     }
 }
 
-pub fn suggestions(vault: &Vault, page_url: &str) -> Vec<Suggestion> {
+pub fn suggestions(vault: &Vault, page_url: &str, last_used: &HashMap<String, i64>) -> Vec<Suggestion> {
     if !page_allowed(page_url) {
         return Vec::new();
     }
     vault
-        .suggestions_for(page_url)
+        .suggestions_with_usage(page_url, last_used)
         .into_iter()
         .map(suggestion)
         .collect()
@@ -806,12 +808,15 @@ mod tests {
         assert!(!page_allowed("http://github.com/login"));
         assert!(!page_allowed("file:///etc/passwd"));
         assert!(!page_allowed("chrome://settings"));
-        assert_eq!(suggestions(&vault(), "http://github.com/login"), []);
+        assert_eq!(
+            suggestions(&vault(), "http://github.com/login", &HashMap::new()),
+            []
+        );
     }
 
     #[test]
     fn suggestions_match_the_page() {
-        let found = suggestions(&vault(), "https://gist.github.com/");
+        let found = suggestions(&vault(), "https://gist.github.com/", &HashMap::new());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, "github");
         assert_eq!(found[0].username, "camille");
@@ -835,7 +840,10 @@ mod tests {
         let v = Vault::new(vec![item("github", "https://github.com"), exact, never])
             .with_match_rules(rules);
         let ids = |page: &str| -> Vec<String> {
-            suggestions(&v, page).into_iter().map(|s| s.id).collect()
+            suggestions(&v, page, &HashMap::new())
+                .into_iter()
+                .map(|s| s.id)
+                .collect()
         };
         assert_eq!(ids("https://banque.fr/connexion"), ["exact"]);
         assert_eq!(ids("https://banque.fr/connexion?x=1"), Vec::<String>::new());
@@ -853,10 +861,14 @@ mod tests {
             equivalent_domains: vec![vec!["exemple.fr".into(), "exemple-banque.com".into()]],
             ..MatchRules::default()
         });
-        let found: Vec<String> = suggestions(&v, "https://www.exemple-banque.com/login")
-            .into_iter()
-            .map(|s| s.id)
-            .collect();
+        let found: Vec<String> = suggestions(
+            &v,
+            "https://www.exemple-banque.com/login",
+            &HashMap::new(),
+        )
+        .into_iter()
+        .map(|s| s.id)
+        .collect();
         assert_eq!(found, ["domaine"]);
     }
 

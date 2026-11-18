@@ -109,6 +109,17 @@ impl Vault {
     /// Logins suggested for a page, from most to least precise.
     /// Each site follows its match rule (see `matching`).
     pub fn suggestions_for(&self, page_url: &str) -> Vec<&Item> {
+        self.suggestions_with_usage(page_url, &HashMap::new())
+    }
+
+    /// The same suggestions, ordered by the device's last-used log
+    /// ([`crate::usage`]): within a match precision, a login used on this
+    /// device comes first (most recent first), like Bitwarden's list.
+    pub fn suggestions_with_usage(
+        &self,
+        page_url: &str,
+        last_used: &HashMap<String, i64>,
+    ) -> Vec<&Item> {
         let mut found = matching_items(
             self.items
                 .iter()
@@ -116,8 +127,10 @@ impl Vault {
             page_url,
             &self.match_rules,
         );
+        let used = |item: &Item| last_used.get(&item.id).copied().unwrap_or(i64::MIN);
         found.sort_by(|(ma, a), (mb, b)| {
             mb.cmp(ma)
+                .then(used(b).cmp(&used(a)))
                 .then(b.favorite.cmp(&a.favorite))
                 .then_with(|| fold(&a.title).cmp(&fold(&b.title)))
         });

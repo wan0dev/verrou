@@ -41,7 +41,11 @@ impl Backend for Fake {
     }
 
     fn suggestions(&self, page_url: &str) -> Option<Vec<Suggestion>> {
-        Some(access::suggestions(&self.vault.lock().unwrap(), page_url))
+        Some(access::suggestions(
+            &self.vault.lock().unwrap(),
+            page_url,
+            &std::collections::HashMap::new(),
+        ))
     }
 
     fn credentials(&self, item: &str, page_url: &str) -> Option<Result<Credentials, String>> {
